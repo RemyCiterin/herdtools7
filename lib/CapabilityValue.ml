@@ -24,6 +24,5 @@ end) : Value.AArch64 = struct
     SymbConstant.Make (CapabilityScalar) (PteVal.No) (AArch64Instr)
   module NoArchOp = ArchOp.No(NoCst)
   module CapOp = AArch64Op.Make (CapabilityScalar)(NoArchOp)
-  module CapValue = SymbValue.Make (AArch64Constant) (CapOp)
-  include AArch64Solver.Make(CapValue)
+  include SymbValue.Make (AArch64Constant) (CapOp)
 end

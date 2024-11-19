@@ -55,12 +55,13 @@ module type S = sig
    * satisfaction of a formula, those predicates are added to the constraints of
    * the solver in valconstraint.ml *)
   type predicate
-  exception Constraint of predicate * cst * cst
+  exception Constraint of predicate * cst
 
   (* Return if two syntactically different constants may be equal modulo the
    * satisfaction of a predicate *)
   val eq_satisfiable : cst -> cst -> predicate option
   val compare_predicate : predicate -> predicate -> int
+  val inverse_predicate : predicate -> predicate
   val pp_predicate : predicate -> string
 end
 
@@ -97,7 +98,7 @@ module No (Cst : Constant.S) :
   type cst = (scalar, pteval, instr) Constant.t
 
   type predicate = no_predicate
-  exception Constraint of predicate * cst * cst
+  exception Constraint of predicate * cst
 
   let do_op _ _ _ = None
   let do_op1 _ _ = None
@@ -109,6 +110,7 @@ module No (Cst : Constant.S) :
 
   let eq_satisfiable _ _ = None
   let compare_predicate _ _ = assert false
+  let inverse_predicate _ = assert false
   let pp_predicate _ = assert false
 end
 
@@ -150,8 +152,9 @@ module OnlyArchOp1 (A : S1) :
   type op = extra_op constr_op
 
   type predicate = no_predicate
-  exception Constraint of predicate * cst * cst
+  exception Constraint of predicate * cst
   let compare_predicate _ _ = assert false
+  let inverse_predicate _ = assert false
   let pp_predicate _ = assert false
   let eq_satisfiable _ _ = None
 

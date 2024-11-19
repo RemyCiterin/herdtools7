@@ -22,6 +22,5 @@ end) : Value.AArch64 = struct
   module NoArchOp = ArchOp.No(NoCst)
   module AArch64Op' = AArch64Op
   module AArch64Op = AArch64Op.Make(Int64Scalar)(NoArchOp)
-  module AArch64Value = SymbValue.Make (AArch64Cst) (AArch64Op)
-  include AArch64Solver.Make(AArch64Value)
+  include SymbValue.Make (AArch64Cst) (AArch64Op)
 end

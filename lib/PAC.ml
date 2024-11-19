@@ -132,6 +132,11 @@ let compare = PacSet.compare
 
 let equal = PacSet.equal
 
+let get_name p =
+  match PacSet.choose_opt p with
+  | Some s -> Some (signature_name s)
+  | None -> None
+
 let pp pac s offset =
   (* Pretty print s+offset *)
   let pp_index s offset =
@@ -141,7 +146,7 @@ let pp pac s offset =
       then Printf.sprintf "%s-%d" s (-offset)
       else s in
   (* Take a PAC field as a list of signatures `l`, and an offset and pretty
-     print `l_offset` *)
+     print `l+offset` *)
   let rec do_rec offset = function
     | [] -> pp_index s offset
     | Ok ok :: xs ->
@@ -156,8 +161,6 @@ let pp pac s offset =
           offset
   in
   do_rec offset (PacSet.elements pac)
-
-
 
 (* A simplex like solver for linear constraints over PAC fields (linear
    because of the XOR), it use a bi-partition of the variables in two set:

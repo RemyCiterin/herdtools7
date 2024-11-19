@@ -79,9 +79,9 @@ module
   let pp_v_old =  do_pp Cst.pp_v_old
 
   type arch_pred = ArchOp.predicate
-  exception Constraint of arch_pred * v * v
+  exception Constraint of arch_pred * v
   let compare_predicate = ArchOp.compare_predicate
-  let eq_satisfiable = ArchOp.eq_satisfiable
+  let inverse_predicate = ArchOp.inverse_predicate
   let pp_predicate = ArchOp.pp_predicate
 
 (* Basic utilities *)
@@ -96,12 +96,6 @@ module
     | Val (c) ->
        Val (Constant.map_scalar Cst.Scalar.printable c)
     | v -> v
-
-  let equalityPossible v1 v2 =
-    match (v1,v2) with
-    | Val x1,Val x2 -> Cst.compare x1 x2 = 0
-    | (Var _,_)
-    | (_,Var _) -> true  (* WARNING: May want to optimize later *)
 
   let compare v1 v2 =
     match v1,v2 with
@@ -311,16 +305,8 @@ module
     | (Val (Label _),Val (Label _))
     | (Val (PteVal _),Val (PteVal _))
     | (Val (Instruction _),Val (Instruction _))
-      -> begin
-        let default = Val (Concrete (Cst.Scalar.of_int (compare  v1 v2))) in
-        let c1 = Option.get (as_constant v1) in
-        let c2 = Option.get (as_constant v2) in
-        match ArchOp.eq_satisfiable c1 c2 with
-        | Some pred ->
-          raise (Constraint (pred, zero, default))
-        | None ->
-            default
-    end
+      ->
+        Val (Concrete (Cst.Scalar.of_int (compare  v1 v2)))
     (* 0 is sometime used as invalid PTE, no orpat because warning 57
        cannot be disabled in some versions ?  *)
     | (Val (PteVal _),Val cst)
@@ -452,9 +438,6 @@ module
 
   let eq v1 v2 = match v1,v2 with
   | Var i1,Var i2 when Misc.int_eq i1 i2 -> v_true
-  | Val s1, Val s2 when Option.is_some (ArchOp.eq_satisfiable s1 s2) ->
-      let pred = Option.get (ArchOp.eq_satisfiable s1 s2) in
-      raise (Constraint (pred,v_true,v_false))
   | Val (Symbolic _|Label _|Tag _|PteVal _|ConcreteVector _|Instruction _ as s1),Val (Symbolic _|Label _|Tag _|PteVal _|ConcreteVector _|Instruction _ as s2) ->
       Cst.eq s1 s2 |> bool_to_v
 (* Assume concrete and others always to differ *)
@@ -466,16 +449,10 @@ module
         (fun s1 s2 -> bool_to_scalar (Cst.Scalar.equal s1 s2))
         v1 v2
 
-  let ne v1 v2 = match v1,v2 with
-  | Val s1, Val s2 when Option.is_some (ArchOp.eq_satisfiable s1 s2) ->
-      let pred = Option.get (ArchOp.eq_satisfiable s1 s2) in
-      raise (Constraint (pred,v_false,v_true))
-  | _, _ ->
-      begin
-        match as_bool (eq v1 v2) with
-        | Some b -> if b then v_false else v_true
-        | None -> assert false
-      end
+  let ne v1 v2 =
+    match as_bool (eq v1 v2) with
+    | Some b -> if b then v_false else v_true
+    | None -> assert false
 
   let lt v1 v2 = match v1,v2 with
 (* Need to compare symbols to zero, for setting X86_64 flags *)
@@ -925,8 +902,8 @@ module
                         (ArchOp.pp_op1 true op) (pp_v v)
                   | Some c -> Val c
                 with
-                | ArchOp.Constraint (pred,cst1,cst2) ->
-                    raise (Constraint (pred,Val cst1,Val cst2))
+                | ArchOp.Constraint (pred,cst1) ->
+                    raise (Constraint (pred,Val cst1))
                 | exn ->
                     raise exn
               end)
@@ -998,8 +975,8 @@ module
                   Warn.user_error "Illegal operation %s on %s and %s"
                     (ArchOp.pp_op o) (pp_v v1) (pp_v v2)
             with
-            | ArchOp.Constraint (pred,cst1,cst2) ->
-                raise (Constraint (pred,Val cst1,Val cst2))
+            | ArchOp.Constraint (pred,cst1) ->
+                raise (Constraint (pred,Val cst1))
             | exn ->
                 raise exn))
 
@@ -1058,16 +1035,4 @@ module
     | Val c -> Val (f c)
 
   let map_scalar f = map_const (Constant.map_scalar f)
-
-  type solver_state = unit
-
-  let empty_solver = ()
-
-  let pp_solver_state _ = ""
-
-  let add_predicate _ _ _ = Some ()
-
-  let normalize cst _ = cst
-
-  let compare_solver_state _ _ = 0
 end

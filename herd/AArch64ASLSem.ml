@@ -1346,8 +1346,9 @@ module Make (TopConf : AArch64Sig.Config) (V : Value.AArch64ASL) :
           let check_and_translate acc c =
             profile "check and translate" @@ fun () ->
             if check_cutoff test_asl c then
-              List.fold_left
-                check_rfm_and_translate acc (solve_regs test_asl c)
+              match solve_regs test_asl c with
+              | None -> acc
+              | Some c -> check_rfm_and_translate acc c
             else acc
           in
           let monads = List.fold_left check_and_translate [] rfms in

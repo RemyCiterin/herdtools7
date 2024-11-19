@@ -28,6 +28,10 @@ module type I = sig
 
   val fromto_of_instr : V.Cst.Instr.t -> (Label.Set.t * Label.Set.t) option
 
+  type solver_state
+  val pp_solver_state : solver_state -> string
+  val compare_solver_state : solver_state -> solver_state -> int
+
   module FaultType : FaultType.S
 end
 
@@ -211,7 +215,7 @@ module type S = sig
   val rstate_filter : (rlocation -> bool) -> rstate -> rstate
   val debug_rstate : rstate -> string
 
-  type final_state = rstate * FaultSet.t * I.V.solver_state
+  type final_state = rstate * FaultSet.t * I.solver_state
   val do_dump_final_state :
     type_env -> FaultAtomSet.t ->
     (string -> string) -> final_state -> string
@@ -857,7 +861,7 @@ module Make(C:Config) (I:I) : S with module I = I
 
 
 
-      type final_state = rstate * FaultSet.t * I.V.solver_state
+      type final_state = rstate * FaultSet.t * I.solver_state
 
       let pp_nice_rstate st delim pp_bd =
         let bds =
@@ -913,7 +917,7 @@ module Make(C:Config) (I:I) : S with module I = I
 
       let do_dump_final_state tenv fobs tr (st,flts,solver) =
         let pp_st = do_dump_rstate tenv tr st in
-        let pp_solver = I.V.pp_solver_state solver in
+        let pp_solver = I.pp_solver_state solver in
         if FaultSet.is_empty flts && FaultAtomSet.is_empty fobs
         then
           pp_st ^ pp_solver
@@ -952,7 +956,7 @@ module Make(C:Config) (I:I) : S with module I = I
               match RState.compare I.V.compare st1 st2 with
               | 0 -> begin
                 match FaultSet.compare flt1 flt2 with
-                | 0 -> I.V.compare_solver_state solver1 solver2
+                | 0 -> I.compare_solver_state solver1 solver2
                 | r -> r
               end
               | r -> r

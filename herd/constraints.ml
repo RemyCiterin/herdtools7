@@ -27,7 +27,7 @@ module type S = sig
 
   module A : Arch_herd.S
 
-  type final_state = A.rstate * A.FaultSet.t * A.V.solver_state
+  type final_state = A.rstate * A.FaultSet.t * A.solver_state
 
   type prop = (A.location,A.V.v,A.I.FaultType.t) ConstrGen.prop
 
@@ -43,8 +43,8 @@ module type S = sig
   module Mixed : functor (SZ: ByteSize.S) -> sig
 (* Check state *)
     val check_prop :
-      A.V.solver_state -> prop -> A.type_env -> A.size_env
-      -> A.state * A.FaultSet.t -> (bool * A.V.solver_state) list
+      A.solver_state -> prop -> A.type_env -> A.size_env
+      -> A.state * A.FaultSet.t -> (bool * A.solver_state) list
     val check_prop_rlocs : prop -> A.type_env -> final_state -> bool
   end
 
@@ -74,7 +74,7 @@ module Make (C:Config) (A : Arch_herd.S) :
         let dbg = false
 
         module A = A
-        type final_state = A.rstate * A.FaultSet.t * A.V.solver_state
+        type final_state = A.rstate * A.FaultSet.t * A.solver_state
 
 (************ Constraints ********************)
 
@@ -320,7 +320,7 @@ module Make (C:Config) (A : Arch_herd.S) :
         module Mixed (SZ : ByteSize.S) = struct
           module AM = A.Mixed(SZ)
 
-          type 'a monad = A.V.solver_state -> ('a * A.V.solver_state) list
+          type 'a monad = A.solver_state -> ('a * A.solver_state) list
           let (let*) x f = fun st ->
             List.concat (List.map (fun (a,s) -> f a s) (x st))
           let pure : 'a -> 'a monad = fun x st -> [x,st]
@@ -336,9 +336,9 @@ module Make (C:Config) (A : Arch_herd.S) :
           let add_equality x y : unit monad = fun st ->
             match x, y with
             | V.Val c1, V.Val c2 -> begin
-              match A.V.eq_satisfiable c1 c2 with
+              match A.eq_satisfiable c1 c2 with
               | Some pred -> begin
-                match A.V.add_predicate true pred st with
+                match A.add_predicate pred st with
                 | None -> contradiction st
                 | Some st -> pure () st
               end
@@ -355,9 +355,9 @@ module Make (C:Config) (A : Arch_herd.S) :
           let add_inequality x y : unit monad = fun st ->
             match x, y with
             | V.Val c1, V.Val c2 -> begin
-              match A.V.eq_satisfiable c1 c2 with
+              match A.eq_satisfiable c1 c2 with
               | Some pred -> begin
-                match A.V.add_predicate false pred st with
+                match A.add_predicate (V.inverse_predicate pred) st with
                 | None -> contradiction st
                 | Some st -> pure () st
               end
@@ -372,20 +372,20 @@ module Make (C:Config) (A : Arch_herd.S) :
                 else pure () st
 
           let normalize_fatom : A.fatom -> A.fatom monad = fun fatom st ->
-            [A.map_fatom (V.map_const (fun cst -> A.V.normalize cst st)) fatom,st]
+            [A.map_fatom (V.map_const (fun cst -> A.normalize cst st)) fatom,st]
 
           let normalize_flts : A.FaultSet.t -> A.FaultSet.t monad = fun flts st ->
             let flts =
               A.FaultSet.map (A.map_fault (V.map_const (fun cst ->
-                A.V.normalize cst st))) flts
+                A.normalize cst st))) flts
             in [flts,st]
 
           let add_predicate is_eq x y =
             if is_eq then add_equality x y else add_inequality x y
 
           module SolverSet = MySet.Make(struct
-            type t = A.V.solver_state
-            let compare = A.V.compare_solver_state
+            type t = A.solver_state
+            let compare = A.compare_solver_state
           end)
 
           let do_check_prop solver look_type look_val flts =
@@ -402,6 +402,11 @@ module Make (C:Config) (A : Arch_herd.S) :
                   let w0 = look_val rloc in
                   let v = A.mask_type t v0
                   and w = A.mask_type t w0 in
+                  if dbg then
+                   Printf.eprintf "Loc:(%s:%s) -> %s[%s] = %s[%s]\n%!"
+                     (A.pp_rlocation rloc) (TestType.pp t)
+                     (A.V.pp_v w) (A.V.pp_v w0)
+                     (A.V.pp_v v) (A.V.pp_v v0);
                   add_predicate sign v w
               | Atom (LL (l1,l2)) ->
                   let v = look_val (Loc l1)

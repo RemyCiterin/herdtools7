@@ -130,6 +130,66 @@ module Make
       let sxtw_op = sxt_op MachSize.Word
       and uxtw_op = uxt_op MachSize.Word
 
+      (* Wrap an operation by checking if the operands can be equals due to a
+         hash collision of two PAC fields, this version is optimised to first
+         check if a collision is possible, so it generate less branches if the
+         operands are known, but it can be the oposite otherwise *)
+      let collision_wrapper op c1 c2 =
+        if pac then
+          M.op (Op.ArchOp AArch64Op.CollisionPossible) c1 c2 >>= fun c ->
+          M.choiceT c (
+            (* The only difference between `c1`and `c2` is their PAC fields *)
+            M.altT (
+              M.op (Op.ArchOp AArch64Op.AssumeCollision) c1 c2 >>= fun _ ->
+                op c1 c1
+            ) (
+              M.op (Op.ArchOp AArch64Op.AssumeNoCollision) c1 c2 >>= fun _ ->
+              op c1 c2
+            )
+          ) (
+            op c1 c2
+          )
+        else
+          op c1 c2
+
+      (* Wrap an operation by checking if the operands can be equals due to as
+         hash collision of two PAC fields, this version always return two
+         executions, it can be used if the operands are unknown *)
+      let collision_wrapper_unknown op c1 c2 =
+        if pac then
+          M.altT (
+            M.op (Op.ArchOp AArch64Op.AssumeCollision) c1 c2 >>= fun _ ->
+              op c1 c1
+          ) (
+            M.op (Op.ArchOp AArch64Op.AssumeNoCollision) c1 c2 >>= fun _ ->
+            op c1 c2
+          )
+        else
+          op c1 c2
+
+      (* Wrap equality test to check for a hash collision of two PAC fields *)
+      let is_eq c1 c2 =
+        collision_wrapper (M.op Op.Eq) c1 c2
+
+      (* Wrap equality test to check for a hash collision of two PAC fields *)
+      let is_eq_unknown c1 c2 =
+        collision_wrapper_unknown (M.op Op.Eq) c1 c2
+
+      (* Ensure that two constants are different for the rest of the execution *)
+      let neqT c1 c2 =
+        if pac then
+          M.op (Op.ArchOp AArch64Op.AssumeNoCollision) c1 c2 >>= fun _ -> M.unitT ()
+        else
+          M.neqT c1 c2
+
+      (* Wrap exclusive-or to check for a hash collision of two PAC fields *)
+      let exclusive_or c1 c2 =
+        collision_wrapper (M.op Op.Xor) c1 c2
+
+      (* Wrap substraction to check for a hash collision of two PAC fields *)
+      let substraction c1 c2 =
+        collision_wrapper (M.op Op.Sub) c1 c2
+
       let mask32 ty m =
         let open AArch64Base in
         match ty with
@@ -869,6 +929,11 @@ module Make
         | X|N -> N
         | NoRet|S|NTA -> N
 
+      (* Return if a PAC field is canonical *)
+      let check_canonical a =
+        M.op1 (Op.ArchOp1 AArch64Op.MakeCanonical) a >>= fun a_canon ->
+        is_eq a a_canon
+
 (* Check if the virtual address is out of range, raise a MMU:Translation fault
    overwise. An address may be out of range if it contains a non-canonical PAC
    field, this functions also make the address syntactically canonical in case of
@@ -882,7 +947,7 @@ module Make
         in
         let mcheck ma =
           M.delay_kont "range check" ma (fun a ma ->
-            M.op1 (Op.ArchOp1 AArch64Op.CheckCanonical) a >>= fun c ->
+            check_canonical a >>= fun c ->
             M.choiceT c (mok (ma_with_commit ma)) (mfault ma a ft))
         in
         M.delay_kont "check address is virtual" ma (fun a ma ->
@@ -1297,11 +1362,11 @@ module Make
              let get_res (v1,v2) =
                 match op with
                 | ADD | ADDS -> M.add v1 v2
-                | EOR -> M.op Op.Xor v1 v2
-                | EON -> M.op1 Op.Inv v2 >>= M.op Op.Xor v1
+                | EOR -> exclusive_or v1 v2
+                | EON -> M.op1 Op.Inv v2 >>= exclusive_or v1
                 | ORR -> M.op Op.Or v1 v2
                 | ORN -> M.op1 Op.Inv v2 >>= M.op Op.Or v1
-                | SUB | SUBS -> M.op Op.Sub v1 v2
+                | SUB | SUBS -> substraction v1 v2
                 | AND | ANDS -> M.op Op.And v1 v2
                 | ASR -> M.op1 (Op.Mask (tr_variant v)) v2 >>= M.op Op.ASR v1
                 | LSR -> M.op1 (Op.Mask (tr_variant v)) v2 >>= M.op Op.Lsr v1
@@ -1311,7 +1376,7 @@ module Make
                    let nbits = MachSize.nbits sz in
                    M.op1 (Op.Mask sz) v2 >>= fun v2 ->
                    (M.op Op.Lsr v1 v2
-                   >>| (M.op Op.Sub (V.intToV nbits) v2
+                   >>| (substraction (V.intToV nbits) v2
                         >>= M.op Op.ShiftLeft v1))
                    >>= fun (v1,v2) -> M.op Op.Or v1 v2
                 | BIC | BICS -> M.op Op.AndNot2 v1 v2 in
@@ -2058,7 +2123,7 @@ module Make
             else do_read_mem_ret sz an aexp ac a ii in
           let noact _ _ = M.mk_singleton_es Act.NoAction ii in
           M.aarch64_cas_no (Access.is_physical ac) ma read_rs write_rs read_mem
-            noact branch M.neqT
+            noact branch neqT
         in
         let mop_fail_with_wb ac ma _ =
           (* CAS fails, there is an Explicit Write Effect writing back *)
@@ -2068,7 +2133,7 @@ module Make
             else rmw_amo_read sz rmw ac a ii
           and write_mem a v = rmw_amo_write sz rmw ac a v ii in
           M.aarch64_cas_no (Access.is_physical ac) ma read_rs write_rs
-            read_mem write_mem branch M.neqT
+            read_mem write_mem branch neqT
         in
         let mop_success ac ma mv =
           (* CAS succeeds, there is an Explicit Write Effect *)
@@ -2117,7 +2182,7 @@ module Make
             ii.A.proc (A.pp_reg rs1) ii.A.proc (A.pp_reg rs2) in
           commit_pred_txt (Some cond) ii in
         let neqp (v1,v2) (x1,x2) =
-            M.op Op.Eq v1 x1 >>| M.op Op.Eq v2 x2
+            is_eq_unknown v1 x1 >>| is_eq_unknown v2 x2
             >>= fun (b1,b2) -> M.op Op.And b1 b2
             >>= M.eqT V.zero
         and eqp (v1,v2) (x1,x2) =
@@ -2561,7 +2626,7 @@ module Make
                 M.choiceT
                   last
                   (scalable_getlane cur_val idx esize
-                   >>= M.op Op.Sub V.zero)
+                   >>= substraction V.zero)
                   (scalable_getlane orig idx esize)
                 >>= fun v ->
                   scalable_setlane cur_val idx esize v
@@ -2915,7 +2980,7 @@ module Make
         match op with
         | Cpy -> M.unitT v
         | Inc -> M.op Op.Add v V.one
-        | Neg -> M.op Op.Sub V.zero v
+        | Neg -> substraction V.zero v
         | Inv -> M.op1 Op.Inv v
 
       let do_load_elem an sz i r addr ii =
@@ -3461,7 +3526,7 @@ module Make
 
         let auth_check xd xn =
           M.op (Op.ArchOp (AArch64Op.AddPAC (false,key))) xd xn >>=
-          M.op1 (Op.ArchOp1 AArch64Op.CheckCanonical)
+          check_canonical
         in
 
         M.delay_kont "read pointer" pointer (fun xd md ->
@@ -3706,7 +3771,7 @@ module Make
             let sz = neon_sz r1 in
             !(read_reg_neon false r3 ii >>|
               read_reg_neon false r2 ii >>= fun (v1,v2) ->
-                M.op Op.Xor v1 v2 >>= fun v ->
+                exclusive_or v1 v2 >>= fun v ->
                   write_reg_neon_sz sz r1 v ii)
         | I_ADD_SIMD(r1,r2,r3) ->
             check_neon inst;
@@ -3942,7 +4007,7 @@ module Make
           check_sve inst;
           !(read_reg_scalable false r3 ii >>|
             read_reg_scalable false r2 ii >>= fun (v1,v2) ->
-              M.op Op.Xor v1 v2 >>= fun v ->
+              exclusive_or v1 v2 >>= fun v ->
                 write_reg_scalable r1 v ii)
         | I_UADDV(var,v,p,z) ->
           check_sve inst;
@@ -4581,7 +4646,7 @@ module Make
                 >>= fun actual_val ->
                   InstrSet.fold
                     (fun inst k ->
-                      M.op Op.Eq actual_val (V.instructionToV inst) >>==
+                      is_eq actual_val (V.instructionToV inst) >>==
                       fun cond -> M.choiceT cond
                           (commit_pred ii >>*=
                             fun () -> do_build_semantics test inst ii)

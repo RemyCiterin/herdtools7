@@ -24,6 +24,5 @@ end) : Value.AArch64 = struct
     SymbConstant.Make (NeonScalar) (PteVal.No)(AArch64Instr)
   module NoArchOp = ArchOp.No(NoCst)
   module AArch64Op = AArch64Op.Make (NeonScalar)(NoArchOp)
-  module NeonValue = SymbValue.Make(AArch64Cst) (AArch64Op)
-  include AArch64Solver.Make(NeonValue)
+  include SymbValue.Make(AArch64Cst) (AArch64Op)
 end

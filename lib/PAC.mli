@@ -34,6 +34,9 @@ val canonical : t
 (* Check if a virtual address is canonical *)
 val is_canonical : t -> bool
 
+(* Return the name of the variable this PAC field is added to (if non canonical) *)
+val get_name : t -> string option
+
 (* Symbolically add a new pac field to a pointer with an exclusive OR using
  * the key, the modifier and the current offset of the pointer.
  * If `x` is a canonical virtual address and `p` is a PAC field:
