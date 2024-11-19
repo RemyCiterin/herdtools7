@@ -66,7 +66,7 @@ module type S =
       val freeze : csym -> Cst.v
 
 (* Equality (for constraint solver) is possible *)
-      val equalityPossible : v -> v -> bool
+      (* val equalityPossible : v -> v -> bool *)
 
 (* Please use this for comparing constants... *)
       val compare : v -> v -> int
@@ -91,6 +91,11 @@ module type S =
          type v are not determined enough to yield a result *)
 
       exception Undetermined
+
+      (* The equality tests may raise an CollisionPAC execption to info the
+         solver that the result depend of the presence of a hash collision
+         between two PAC fields *)
+      exception CollisionPAC of PAC.t * PAC.t * v * v
 
 
 (* Bit-Twiddling Ops *)
@@ -123,6 +128,16 @@ module type S =
       val map_const : (Cst.v -> Cst.v) -> v -> v
       val map_scalar : (Cst.Scalar.t -> Cst.Scalar.t) -> v -> v
       val map_csym : (csym -> v) -> v -> v
+
+(* Functions to interact with a constraint solver *)
+      type solver_state =
+            { solver: PAC.solver_state (* Collision solver *)
+            ; solution: Cst.v Solution.t} (* Current variable assignation to constants *)
+      val add_equality : Cst.v -> Cst.v -> solver_state -> solver_state option
+      val add_inequality : Cst.v -> Cst.v -> solver_state -> solver_state option
+      val normalize : Cst.v -> solver_state -> Cst.v
+      val pp_solver_state : solver_state -> string
+      val compare_solver_state : solver_state -> solver_state -> int
     end
 
 module type AArch64 =
