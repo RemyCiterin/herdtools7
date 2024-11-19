@@ -41,7 +41,10 @@ module Make
     let pte2 = kvm && C.variant Variant.PTE2
     let do_cu = C.variant Variant.ConstrainedUnpredictable
     let self = C.variant Variant.Ifetch
-    let pac = C.variant Variant.Pac
+    let pauth1 = C.variant (Variant.PacVersion `PAuth1)
+    let pauth2 = C.variant (Variant.PacVersion `PAuth2)
+    let pac = pauth1 || pauth2
+    let key_enable key = not (C.variant (Variant.NoPacKey key))
     let const_pac_field = C.variant Variant.ConstPacField
     let fpac = C.variant Variant.FPac
 
@@ -75,6 +78,12 @@ module Make
       if not sme then
         Warn.user_error
           "SME instruction %s requires -variant sme"
+          (AArch64.dump_instruction inst)
+
+    let check_pac inst =
+      if not pac then
+        Warn.user_error
+          "Pauth instruction %s requires -variant pauth1 or pauth2"
           (AArch64.dump_instruction inst)
 
 (* Barrier pretty print *)
@@ -1426,7 +1435,10 @@ module Make
  * iico_data dependency between `mv` and `mop` in case of a success.
  *)
       let lift_pac_virt mop ma dir an ii =
-        let mok ma = mop Access.VIR ma >>= M.ignore >>= B.next1T in
+        let mok ma = mop ma >>= M.ignore >>= B.next1T in
+        (* Addresses of memory operations must be canonical for the construction
+         * of the rf, co and fr maps... *)
+        let mok ma = mok (ma >>= M.op1 (Op.ArchOp1 AArch64Op.MakeCanonical)) in
         let lbl_v = get_instr_label ii in
         let ft = Some (FaultType.AArch64.MMU FaultType.AArch64.Translation) in
         let mfault ma a =
@@ -1510,7 +1522,7 @@ module Make
             (* M.short will add an iico_data only if memtag is enabled *)
             M.short (is_this_reg rA) (E.is_pred_txt (Some "color")) m
           else if pac then
-            lift_pac_virt mop ma dir an ii
+            lift_pac_virt (mop Access.VIR) ma dir an ii
           else if checked then
             lift_memtag_virt mop ma dir an ii
           else
@@ -3390,7 +3402,7 @@ module Make
 (*******************************)
 
       let do_pac key rd rn ii =
-        if pac then begin
+        if key_enable key then begin
           read_reg_ord rd ii >>|
           read_reg_ord rn ii >>= fun (addr, modifier) ->
           M.op
@@ -3404,21 +3416,27 @@ module Make
           B.nextSetT rd v
 
       let authenticate pointer modifier key ii mop mfault =
-        let mfail md mn = if fpac then
-            (md >>| mn >>= fun _ -> commit_pred ii) >>*= fun _ -> mfault
-          else
-            md >>| mn >>= fun (xd,xn) ->
-            mop (M.op (Op.ArchOp (AArch64Op.AddPAC (false,key))) xd xn)
-        in
-
         let original_pointer md =
           md >>= M.op1 (Op.ArchOp1 AArch64Op.MakeCanonical) in
 
         (* data_input_next allow to not have a control depedency between the
          * commit event and the register-read event in Xd *)
-        let mop md mn =
+        let mok md mn =
           (md >>| mn >>= fun _ -> commit_pred ii) >>*= fun _ ->
           (M.data_input_next (original_pointer md) (fun ptr -> mop (M.unitT ptr)))
+        in
+
+        let error_code md =
+          md >>= M.op1 (Op.ArchOp1 (AArch64Op.AddErrorCode key)) in
+
+        let mfail md mn = if fpac then
+            (md >>| mn >>= fun _ -> commit_pred ii) >>*= fun _ -> mfault
+          else if pauth1 then
+            (md >>| mn >>= fun _ -> commit_pred ii) >>*= fun _ ->
+            (M.data_input_next (error_code md) (fun ptr -> mop (M.unitT ptr)))
+          else
+            md >>| mn >>= fun (xd,xn) ->
+            mop (M.op (Op.ArchOp (AArch64Op.AddPAC (false,key))) xd xn)
         in
 
         let auth_check xd xn =
@@ -3430,13 +3448,13 @@ module Make
           M.delay_kont "read modifier" modifier (fun xn mn ->
             auth_check xd xn >>= fun c ->
             M.choiceT c
-              (mop md mn)
+              (mok md mn)
               (mfail md mn)
           )
         )
 
       let do_aut key rd rn ii =
-        if pac then begin
+        if key_enable key then begin
           let (>>!) = M.(>>!) in
 
           let lbl_v = get_instr_label ii in
@@ -4480,12 +4498,15 @@ module Make
            let lbl_v = get_instr_label ii in
            m_fault >>| set_elr_el1 lbl_v ii
            >>! B.fault [AArch64Base.elr_el1, lbl_v]
-(* Pointer Anthentication Code `FEAT_Pauth2` *)
+(* Pointer Anthentication Code *)
         | I_PAC (key, rd, rn) ->
+            check_pac inst;
             do_pac key rd rn ii
         | I_AUT (key, rd, rn) ->
+            check_pac inst;
             do_aut key rd rn ii
         | I_XPACI r | I_XPACD r ->
+            check_pac inst;
             do_xpac r ii
 (*  Cannot handle *)
         (* | I_BL _|I_BLR _|I_BR _|I_RET _ *)
