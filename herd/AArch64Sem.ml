@@ -1064,9 +1064,12 @@ module Make
 (* Check that the pac field of a virtual address is canonical in an aut*
    instruction, the memory operations use a different function because their
    faults need a data dependency with the address *)
-      let check_pac_canonical ma ii mok mfault =
-        let mfault ma = (ma >>= fun _ -> commit_pred ii) >>*= fun _ -> mfault in
-        let mok ma = do_insert_commit ma (fun a -> mok (M.unitT a)) ii in
+      let check_pac_canonical msg ma ii mok mfault =
+        let commit = commit_pred_txt (Some msg) ii in
+        (* iico_ctrl dependency but no iico_data dependency *)
+        let mfault ma = (ma >>= fun _ -> commit) >>*= fun _ -> mfault in
+        (* iico_ctrl and iico_data depenedencies *)
+        let mok ma = ma >>== fun a -> commit >>*= fun _ ->  mok a in
           M.delay_kont "check pac" ma (fun a ma ->
             M.op1 Op.CheckCanonical a >>= fun c ->
             M.choiceT c (mok ma) (mfault ma)
@@ -1411,6 +1414,9 @@ module Make
  *)
       let lift_pac_virt mop ma dir an ii =
         let mok ma = mop Access.VIR ma >>= M.ignore >>= B.next1T in
+        (* Addresses of memory operations must be canonical for the construction
+         * of the rf, co and fr maps... *)
+        let mok ma = mok (ma >>= M.op1 Op.SetCanonical) in
         let mfault ma =
           do_insert_commit ma (fun a ->
             mk_fault (Some a) dir an ii
@@ -1419,7 +1425,7 @@ module Make
           >>! B.Exit
         in
         let ma_with_commit ma =
-          do_append_commit ma (Some "pac") ii
+          do_append_commit ma (Some "memop-pac-check") ii
         in
         let mcheck ma =
           M.delay_kont "pac check" ma (fun a ma ->
@@ -4297,9 +4303,19 @@ module Make
            let lbl_v = get_instr_label ii in
            m_fault >>| set_elr_el1 lbl_v ii >>! B.Fault [AArch64Base.elr_el1, lbl_v]
 (* Pointer Anthentication Code `FEAT_Pauth2` with `FEAT_FPAC` *)
-        | I_PAC (key, rd, rn) ->
+        | I_PAC (key, rd, rn)
+        ->
             begin
-              read_reg_ord rd ii >>|
+              (* Ensure that we doesn't raise an user error in case of a hash
+               * collision between the PAC field of the virtual address in `rd`
+               * and the canonical PAC field... *)
+              let gen_addr maddr =
+                M.delay_kont "remove pac field before pac*" maddr (fun addr maddr ->
+                  M.op1 Op.CheckCanonical addr >>= fun cond ->
+                  M.choiceT cond (maddr >>= M.op1 Op.SetCanonical) maddr
+                )
+              in
+              gen_addr (read_reg_ord rd ii) >>|
               read_reg_ord rn ii >>= fun (addr, modifier) ->
               M.op (Op.AddPAC (not const_pac_field, key)) addr modifier >>= fun v ->
               write_reg_dest rd v ii >>= fun v ->
@@ -4317,8 +4333,8 @@ module Make
                   >>! B.Exit
               in
 
-              let mop ma =
-                ma >>= fun v ->
+              let mop =
+                fun v ->
                 write_reg_dest rd v ii >>= fun v ->
                 B.nextSetT rd v
               in
@@ -4330,8 +4346,8 @@ module Make
               in
 
               if fpac
-              then check_pac_canonical ma ii mop mfault
-              else mop ma
+              then check_pac_canonical ("pac"^PAC.pp_lower_key key) ma ii mop mfault
+              else ma >>= mop
             end
         (* If address tagging and logical address tagging is not enabled then
           xpacd and xpaci have the same behaviour *)

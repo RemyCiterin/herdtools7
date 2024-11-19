@@ -153,7 +153,7 @@ name_pac_plus:
     match $3 with
     | Symbolic (Virtual v) ->
       Symbolic (Virtual {
-        v with pac = PAC.add key modifier 0 v.pac
+        v with pac = PAC.add v.name key modifier 0 v.pac
       })
     | _ -> Warn.user_error "pac field only exists for virtual address"
   }
@@ -163,7 +163,7 @@ name_pac_plus:
     let modifier = Printf.sprintf "0x%x" (int_of_string $5) in
     match $3 with
     | Symbolic (Virtual v) ->
-      Symbolic (Virtual {v with pac = PAC.add $1 modifier 0 v.pac})
+      Symbolic (Virtual {v with pac = PAC.add v.name $1 modifier 0 v.pac})
     | _ -> Warn.user_error "pac field only exists for virtual address"
   }
 | TOK_PAC LPAR name_pac_plus COMMA NAME COMMA NUM COMMA NUM RPAR
@@ -176,7 +176,7 @@ name_pac_plus:
     match $3 with
     | Symbolic (Virtual v) ->
       Symbolic (Virtual {
-        v with pac = PAC.add key modifier (int_of_string $9) v.pac
+        v with pac = PAC.add v.name key modifier (int_of_string $9) v.pac
       })
     | _ -> Warn.user_error "pac field only exists for virtual address"
   }
@@ -187,7 +187,7 @@ name_pac_plus:
     match $3 with
     | Symbolic (Virtual v) ->
       Symbolic (Virtual {
-        v with pac = PAC.add $1 modifier (int_of_string $7) v.pac})
+        v with pac = PAC.add v.name $1 modifier (int_of_string $7) v.pac})
     | _ -> Warn.user_error "pac field only exists for virtual address"
   }
 

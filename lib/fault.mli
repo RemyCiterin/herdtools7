@@ -48,11 +48,15 @@ module type S = sig
     (Proc.t * Label.Set.t) * loc_global option
     * fault_type option * string option
 
+  val map_fault : (loc_global -> loc_global) -> fault -> fault
+
   val pp_fault : fault -> string
 
   module FaultSet : MySet.S with type elt = fault
 
   type fatom = (loc_global,fault_type) atom
+
+  val map_fatom : (loc_global -> loc_global) -> fatom -> fatom
 
   val pp_fatom : fatom -> string
   val check_one_fatom : fault -> fatom -> bool
