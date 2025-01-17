@@ -8,9 +8,9 @@ my_herd:
 	../_build/install/default/bin/herd7 \
 		-gv $(NAME).litmus -o build \
 		-set-libdir ../herd/libdir \
-		-showevents all -show all \
+		-show prop -showevents all \
 		-doshow iico_ctrl -doshow ctrl -doshow all \
-		-squished true -variant pac,fpac,OldSolver -debug solver
+		-squished true -variant pac -debug solver
 
 # Run my modified version of herd on a user given file
 %.expected:

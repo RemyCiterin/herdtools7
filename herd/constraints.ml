@@ -26,6 +26,7 @@ end
 module type S = sig
 
   module A : Arch_herd.S
+  module VC : CollisionSolver.S with type cst = A.V.Cst.v
 
   type final_state = A.rstate * A.FaultSet.t
 
@@ -43,9 +44,9 @@ module type S = sig
   module Mixed : functor (SZ: ByteSize.S) -> sig
 (* Check state *)
     val check_prop :
-      prop -> A.type_env -> A.size_env
-      -> A.state * A.FaultSet.t -> bool
-    val check_prop_rlocs : prop -> A.type_env -> final_state -> bool
+      VC.solver_state -> prop -> A.type_env -> A.size_env
+      -> A.state * A.FaultSet.t -> bool list
+    val check_prop_rlocs : VC.solver_state -> prop -> A.type_env -> final_state -> bool
   end
 
 (* Build a new constraint thar checks State membership *)
@@ -66,14 +67,15 @@ end
 open ConstrGen
 
 
-module Make (C:Config) (A : Arch_herd.S) :
-    S with module A = A
+module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst = A.V.Cst.v) :
+    S with module A = A and module VC = VC
         =
       struct
 
         let dbg = false
 
         module A = A
+        module VC = VC
         type final_state = A.rstate * A.FaultSet.t
 
 (************ Constraints ********************)
@@ -114,48 +116,6 @@ module Make (C:Config) (A : Arch_herd.S) :
         | ExistsState p
         | NotExistsState p -> loc_in_prop loc p
 
-        module Mixed (SZ : ByteSize.S) = struct
-          module AM = A.Mixed(SZ)
-
-          let do_check_prop look_type look_val flts =
-            let rec do_rec = function
-              | Atom (LV (rloc,v0)) ->
-                 let t = look_type rloc in
-                 let w0 = look_val rloc in
-                 let v = A.mask_type t v0
-                 and w = A.mask_type t w0 in
-                 if dbg then
-                   Printf.eprintf "Loc:(%s:%s) -> %s[%s] = %s[%s]\n%!"
-                     (A.pp_rlocation rloc) (TestType.pp t)
-                     (A.V.pp_v w) (A.V.pp_v w0)
-                     (A.V.pp_v v) (A.V.pp_v v0);
-                  A.V.equal v w
-              | Atom (LL (l1,l2)) ->
-                  let v1 = look_val (Loc l1)
-                  and v2 = look_val (Loc l2) in
-                  A.V.compare v1 v2 = 0
-              | Atom (FF f) -> A.check_fatom flts f
-              | Not p -> not (do_rec p)
-              | And ps -> List.for_all do_rec ps
-              | Or ps -> List.exists do_rec ps
-              | Implies (p1, p2) ->
-                  not (do_rec p1) || do_rec p2 in
-            fun p ->
-              try do_rec p with A.LocUndetermined -> assert false
-
-          let check_prop p tenv senv (state,flts) =
-            let look_val rloc =
-              A.val_of_rloc
-                (AM.look_in_state senv state)
-                tenv rloc in
-            do_check_prop (A.look_rloc_type tenv) look_val flts p
-
-          let check_prop_rlocs p tenv (state,flts) =
-            let look_val rloc =
-              AM.look_in_state_rlocs state rloc in
-            do_check_prop (A.look_rloc_type tenv) look_val flts p
-
-        end
 
         let matrix_of_states fs =
           A.StateSet.fold
@@ -358,5 +318,109 @@ module Make (C:Config) (A : Arch_herd.S) :
           | NotExistsState p
           | ForallStates p ->
               pp_as_kind c ^ ": "^ pp_prop p
+
+        module Mixed (SZ : ByteSize.S) = struct
+          module AM = A.Mixed(SZ)
+
+          type 'a monad = VC.solver_state -> ('a * VC.solver_state) list
+          let (let*) x f = fun st ->
+            List.concat (List.map (fun (a,s) -> f a s) (x st))
+          let (let+) x f = fun st -> List.map (fun (a,s) -> (f a,s)) (x st)
+          let pure : 'a -> 'a monad = fun x st -> [x,st]
+          let contradiction : 'a monad = fun _ -> []
+          let test_cond c = if c then pure () else contradiction
+          let alt xs = fun st -> List.concat_map (fun x -> x st) xs
+          let rec iter : unit monad list -> unit monad = function
+            | x :: xs ->
+                let* _ = x in
+                iter xs
+            | [] -> pure ()
+
+          let add_equality x y : unit monad = fun st ->
+            match x, y with
+            | V.Val c1, V.Val c2 -> begin
+              match VC.add_equality c1 c2 st with
+              | None -> contradiction st
+              | Some st -> pure () st
+            end
+            | _, _ ->
+                if V.equal x y
+                then pure () st
+                else contradiction st
+
+          let add_inequality x y : unit monad = fun st ->
+            match x, y with
+            | V.Val c1, V.Val c2 -> begin
+              match VC.add_inequality c1 c2 st with
+              | None -> contradiction st
+              | Some st -> pure () st
+            end
+            | _, _ ->
+                if V.equal x y
+                then contradiction st
+                else pure () st
+
+          let add_predicate is_eq x y =
+            if is_eq then add_equality x y else add_inequality x y
+
+          let do_check_prop solver look_type look_val flts =
+            (* Return the list of solver states that satisfy (if sign then p
+             * else Not p). This implementation is ineficient because it
+             * duplicate all the computations at each Or or NAnd gates *)
+            let rec do_rec sign p : unit monad = match p with
+              | Atom (LV (rloc,v0)) ->
+                  let t = look_type rloc in
+                  let w0 = look_val rloc in
+                  let v = A.mask_type t v0
+                  and w = A.mask_type t w0 in
+                  add_predicate sign v w
+              | Atom (LL (l1,l2)) ->
+                  let v = look_val (Loc l1)
+                  and w = look_val (Loc l2) in
+                  add_predicate sign v w
+              | Atom (FF f) ->
+                  let c = A.check_fatom flts f in
+                  test_cond (if sign then c else not c)
+              | Not p ->
+                  do_rec (not sign) p
+              | Or ps ->
+                  if sign
+                  then alt (List.map (do_rec sign) ps)
+                  else iter (List.map (do_rec sign) ps)
+              | And ps ->
+                  if sign
+                  then iter (List.map (do_rec sign) ps)
+                  else alt (List.map (do_rec sign) ps)
+              | Implies (p1,p2) ->
+                  do_rec sign (Or [Not p1; p2]) in
+            fun p ->
+              try
+                match do_rec true p solver, do_rec false p solver with
+                | _::_, _::_ -> [true;false]
+                | [], [] -> assert false
+                | [], _::_ -> [false]
+                | _::_, [] -> [true]
+              with A.LocUndetermined -> assert false
+
+          let check_prop solver p tenv senv (state,flts) =
+            Printf.printf "constraints: \n\t%s\nsolver:\n%s\n"
+              (ConstrGen.pp_prop (arg Ascii) p)
+              (VC.pp_solver_state solver);
+            let look_val rloc =
+              A.val_of_rloc
+                (AM.look_in_state senv state)
+                tenv rloc in
+            do_check_prop solver (A.look_rloc_type tenv) look_val flts p
+
+          let check_prop_rlocs solver p tenv (state,flts) =
+            (*Printf.printf "constraints rloc: \n\t%s\nsolver:\n%s\n"
+              (ConstrGen.pp_prop (arg Ascii) p)
+              (VC.pp_solver_state solver);*)
+            let look_val rloc =
+              AM.look_in_state_rlocs state rloc in
+            match do_check_prop solver (A.look_rloc_type tenv) look_val flts p with
+            | [result] -> result
+            | _ -> Warn.user_error "check_prop_rlocs return multiple solutions"
+        end
 
       end

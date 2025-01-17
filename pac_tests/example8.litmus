@@ -1,10 +1,11 @@
 AArch64 str failure
-{ 0:x0=pac(x,da,0); 0:x1=pac(x,db,0) }
+Variant=pac,const-pac-field,fpac
+{
+  0:x0=x; 0:x1=42; 0:x2=43;
+  void* x = pacda(y,0); int y = 42;
+}
 P0;
-  cmp x0,x1;
-  b.eq finish;
-  autdzb x0;
-  mov x2,#1;
-finish:;
+  ldr x0,[x0];
+  cas x1,x2,[x0];
 exists
-( 0:x2=1 /\ ~Fault(P0) )
+( 0:x1=42 /\ [y]=43 /\ ~Fault(P0) /\ [x]<>y )

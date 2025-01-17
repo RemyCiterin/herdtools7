@@ -128,7 +128,7 @@ module type S = sig
   val compute_final_state :
     S.test -> S.read_from S.RFMap.t -> S.E.EventSet.t -> S.A.state * S.A.FaultSet.t
 
-  val check_filter : S.test -> S.A.state * S.A.FaultSet.t -> bool
+  val check_filter : S.M.VC.solver_state -> S.test -> S.A.state * S.A.FaultSet.t -> bool
 
   val get_loc :
     S.E.event -> S.E.A.location
@@ -1396,11 +1396,15 @@ let match_reg_events es =
     module CM = S.Cons.Mixed(C)
 
 (* Internal filter *)
-    let check_filter test fsc = match test.Test_herd.filter with
+    let check_filter solver test fsc = match test.Test_herd.filter with
     | None -> true
     | Some p ->
-        not C.check_filter ||
-          CM.check_prop p (S.type_env test) (S.size_env test) fsc
+        (* TODO: List.hd is probably an unsound approximation *)
+        not C.check_filter || (
+          match CM.check_prop solver p (S.type_env test) (S.size_env test) fsc with
+          | [result] -> result
+          | _ -> Warn.user_error "check_prop return multiple results in check_filter"
+        )
 
 (*************************************)
 (* Final condition invalidation mode *)
@@ -1416,12 +1420,15 @@ let match_reg_events es =
 
     module T = Test_herd.Make(S.A)
 
-    let final_is_relevant test fsc =
+    let final_is_relevant solver test fsc =
       let open ConstrGen in
       let cnstr = T.find_our_constraint test in
       let senv = S.size_env test
       and tenv = S.type_env test in
-      let check_prop p = CM.check_prop p tenv senv fsc in
+      let check_prop p = match CM.check_prop solver p tenv senv fsc with
+        | [result] -> result
+        | _ -> Warn.user_error "check prop return multiple results in final_is_relevant"
+      in
       match cnstr with
         (* Looking for 'Allow' witness *)
       | NotExistsState p | ExistsState p -> check_prop p
@@ -1430,8 +1437,8 @@ let match_reg_events es =
             (* Looking for witness that invalidates 'Forbid' *)
 
 
-    let worth_going test fsc = match C.speedcheck with
-    | Speed.True|Speed.Fast -> final_is_relevant test fsc
+    let worth_going solver test fsc = match C.speedcheck with
+    | Speed.True|Speed.Fast -> final_is_relevant solver test fsc
     | Speed.False -> true
 
 (***************************)
@@ -1833,7 +1840,7 @@ let match_reg_events es =
                   S.RFMap.add (S.Final (get_loc w)) (S.Store w) k)
                 rfm ws in
             let fsc = compute_final_state test rfm es.E.events in
-            if check_filter test fsc && worth_going test fsc then begin
+            if check_filter solver test fsc && worth_going solver test fsc then begin
               if C.debug.Debug_herd.solver then begin
                 let module PP = Pretty.Make(S) in
                 let fsc,_ = fsc in eprintf "Final rfmap, final state=%s\n%!" (S.A.dump_state fsc);

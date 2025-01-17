@@ -698,9 +698,9 @@ module
     | Val (Symbolic (Virtual {pac})), Val _
       when not (Constant.PAC.is_canonical pac) ->
         Warn.user_error "addPAC: %s already contain a PAC field" (pp_v pointer)
-    | Val (Symbolic (Virtual ({pac; offset} as v))), Val m ->
+    | Val (Symbolic (Virtual ({pac; offset; name} as v))), Val m ->
       let modifier = Cst.pp true m in
-      let pac = Constant.PAC.add key modifier offset pac in
+      let pac = Constant.PAC.add name key modifier offset pac in
       Val (Symbolic (Virtual {v with pac}))
     | Val _, Val _ ->
         Warn.user_error "addPAC: %s is not a valid virtual address" (pp_v pointer)
@@ -712,9 +712,9 @@ module
     `pac*` instruction in presence of the variant const-pac-field *)
   let addPAC key pointer modifier =
     match pointer, modifier with
-    | Val (Symbolic (Virtual ({pac; offset} as v))), Val m ->
+    | Val (Symbolic (Virtual ({pac; offset; name} as v))), Val m ->
       let modifier = Cst.pp true m in
-      let pac = Constant.PAC.add key modifier offset pac in
+      let pac = Constant.PAC.add name key modifier offset pac in
       Val (Symbolic (Virtual {v with pac}))
     | Val _, Val _ ->
         Warn.user_error "addPAC: %s is not a valid virtual address" (pp_v pointer)

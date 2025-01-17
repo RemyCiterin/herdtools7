@@ -46,7 +46,6 @@ module type S = sig
     | Binop of (arch_op Op.op) * atom * atom
     | Terop of Op.op3 * atom * atom * atom
 
-
   type rvalue = expr
 
   type cnstrnt =
@@ -60,7 +59,16 @@ module type S = sig
   (* Pointer Authentication collision solver state *)
   type solver_state
 
+  val pp_solver_state : solver_state -> string
+
+  (* Return the initial state of the solver *)
   val init_solver : solver_state
+
+  (* Add an equality in the consraints solver state *)
+  val add_equality : cst -> cst -> solver_state -> solver_state option
+
+  (* Add an inequality in the constraints solver state *)
+  val add_inequality : cst -> cst -> solver_state -> solver_state option
 
   type solution
 
@@ -398,6 +406,8 @@ and type state = A.state =
       { solver: PAC.solver_state (* Collision solver *)
       ; solution: cst V.Solution.t} (* Current variable assignation to constants *)
 
+    let pp_solver_state solver = PAC.pp_solver solver.solver
+
     type answer =
       (solution * cnstrnts * solver_state) list
 
@@ -406,8 +416,36 @@ and type state = A.state =
       solution= V.Solution.empty;
     }
 
+    let add_equality x y st =
+      match Constant.collision x y with
+      | Some (px,py) -> begin
+        match PAC.add_equality px py st.solver with
+        | Some solver -> Some { st with solver }
+        | None -> None
+      end
+      | None ->
+          if V.Cst.eq x y
+          then Some st
+          else None
+
+    let add_inequality x y st =
+      match Constant.collision x y with
+      | Some (px,py) -> begin
+        match PAC.add_inequality px py st.solver with
+        | Some solver -> Some { st with solver }
+        | None -> None
+      end
+      | None ->
+          if not (V.Cst.eq x y)
+          then Some st
+          else None
+
     type 'a solver_monad =
       solver_state -> (solver_state * 'a) list
+
+    (* return ths solver state *)
+    let get_state : solver_state solver_monad =
+      fun st -> [st,st]
 
     (* Return the current value of the PAC collision solver *)
     let get_solver : PAC.solver_state solver_monad =
@@ -416,6 +454,9 @@ and type state = A.state =
     (* Return the current assignation of variables *)
     let get_solution : cst V.Solution.t solver_monad =
       fun st -> [st,st.solution]
+
+    let set_state : solver_state -> unit solver_monad =
+      fun st _ -> [st,()]
 
     let set_solver : PAC.solver_state -> unit solver_monad =
       fun solver st -> [{st with solver},()]
@@ -445,18 +486,10 @@ and type state = A.state =
 
     (* Assume that two constants are equals *)
     let assume_equality x y : unit solver_monad =
-      let* solver = get_solver in
-      match Constant.collision x y with
-      | Some (px,py) -> begin
-        match PAC.add_equality px py solver with
-        | Some solver -> set_solver solver
-        | None -> contradiction
-      end
-      | None ->
-          if V.Cst.eq x y
-          then pure ()
-          else contradiction
-
+      let* state = get_state in
+      match add_equality x y state with
+      | Some state -> set_state state
+      | None -> contradiction
 
     (* Assert the presence or abscence of a collision *)
     let collision x y (vtrue:'a) (vfalse:'a) : 'a solver_monad =

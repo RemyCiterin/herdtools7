@@ -165,6 +165,7 @@ previous implementation otherwise.
 
 For the moment my implementation doesn't support the `xor` instruction.
 
+
 ### Final state
 
 The final state can introduce some "collisions" too, as example if we assign the

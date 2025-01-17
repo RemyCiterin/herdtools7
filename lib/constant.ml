@@ -35,6 +35,9 @@ module PAC = struct
      the XOR off all the signatures *)
   type signature =
     {
+      (* the name of the varaible used as a virtual address to compute the pac
+         field *)
+      name: string ;
       (* "ia", "da", "ib" or "db" *)
       key : string ;
       (* modifier: a string used as a "salt" added to the hash *)
@@ -44,13 +47,17 @@ module PAC = struct
     }
 
   let pp_signature p s =
-    sprintf "pac(%s, %s, %s, %d)" s p.key p.modifier p.offset
+    sprintf "pac%s(%s, %s, %d)" p.key s p.modifier p.offset
 
   let compare_signature p1 p2 =
     match String.compare p1.key p2.key with
     | 0 ->
         begin match String.compare p1.modifier p2.modifier with
-        | 0 -> Int.compare p1.offset p2.offset
+        | 0 -> begin
+          match Int.compare p1.offset p2.offset with
+          | 0 -> String.compare p1.name p2.name
+          | r -> r
+        end
         | r -> r
         end
     | r -> r
@@ -73,11 +80,11 @@ module PAC = struct
     PacSet.is_empty pac
 
   (* add a PAC signature in a PAC field using an exclusive OR *)
-  let add key modifier offset pac =
-    if PacSet.mem {modifier; key; offset} pac then
-      PacSet.remove {modifier; key; offset} pac
+  let add name key modifier offset pac =
+    if PacSet.mem {name; modifier; key; offset} pac then
+      PacSet.remove {name; modifier; key; offset} pac
     else
-      PacSet.add {modifier; key; offset} pac
+      PacSet.add {name; modifier; key; offset} pac
 
   (* Return the exclusive XOR of two sets of PAC fields, can be optimised but
      it's probably not very usefull as the size of the equations will be very

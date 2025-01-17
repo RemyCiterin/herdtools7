@@ -36,9 +36,9 @@ module PAC : sig
   (* Symbolically add a new pac field to a pointer with an exclusive OR using
    * the key, the modifier and the current offset of the pointer.
    * If `x` is a canonical virtual address and `p` is a PAC field:
-   *     `add modifier key offset p = pac(x+offset, key, modifier) eor p`
+   *     `add modifier name key offset p = pac(x+offset, key, modifier) eor p`
    *)
-  val add : string -> string -> int -> t -> t
+  val add : string -> string -> string -> int -> t -> t
 
   (* A type of solver to reason about equality constraints on the PAC fields of
    * virtual addresses*)

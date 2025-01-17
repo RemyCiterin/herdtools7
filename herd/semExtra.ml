@@ -36,7 +36,7 @@ module type S = sig
   module E : Event.S with module A = A and module Act.A = A
   module M  : Monad.S
   with module A = A and module E = E and type evt_struct = E.event_structure
-  module Cons : Constraints.S with module A = A
+  module Cons : Constraints.S with module A = A and module VC = M.VC
 
 (* Report some flags *)
   val do_deps : bool
@@ -219,7 +219,7 @@ module Make(C:Config) (A:Arch_herd.S) (Act:Action.S with module A = A)
     end
 
     module M = EventsMonad.Make(CEM)(A)(E)
-    module Cons = Constraints.Make (C.PC)(A)
+    module Cons = Constraints.Make (C.PC)(A)(M.VC)
 
     let do_deps = C.variant Variant.Deps
 
