@@ -1425,7 +1425,7 @@ module Make
           >>! B.Exit
         in
         let ma_with_commit ma =
-          do_append_commit ma (Some "pac") ii
+          do_append_commit ma (Some "memop-pac-check") ii
         in
         let mcheck ma =
           M.delay_kont "pac check" ma (fun a ma ->

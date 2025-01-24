@@ -241,6 +241,10 @@ module Make(O:Config)(M:XXXMem.S) =
       let check = check_prop solver test in
 
       fun conc (st,flts) (set_pp,vbpp) flags c ->
+        let st = A.map_state (function
+          | A.V.Var var -> A.V.Var var
+          | A.V.Val value -> A.V.Val (S.M.VC.normalize value solver)
+        ) st in
         if do_observed && not (all_observed test conc) then c
         else if
           match O.throughflag with
@@ -251,7 +255,7 @@ module Make(O:Config)(M:XXXMem.S) =
           let st = A.map_state A.V.printable st in
           let fsc = st,flts in
           (* Fold over all the possible results of hash collisions *)
-          List.fold_right (fun ok c ->
+          List.fold_right (fun (ok, solver) c ->
             let show_exec =
               let open PrettyConf in
               match O.show with

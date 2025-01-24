@@ -56,6 +56,9 @@ module PAC : sig
   (* Add an inequality constraint to the solver state, return None if this
    * inequality introduce a contradiction *)
   val add_inequality : t -> t -> solver_state -> solver_state option
+
+  (* Normalize a PAC field in the current solver state *)
+  val normalize : t -> solver_state -> t
 end
 
 (* Symbolic location metadata*)
@@ -149,6 +152,9 @@ val collision :
   ('scalar, 'pte, 'instr) t ->
     ('scalar, 'pte, 'instr) t ->
       (PAC.t * PAC.t) option
+
+val normalize : ('scalar, 'pte, 'instr) t ->
+  PAC.solver_state -> ('scalar, 'pte, 'instr) t
 
 (* New style: PTE(s), PHY(s), etc. *)
 val pp :

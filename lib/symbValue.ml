@@ -1086,5 +1086,29 @@ module
 
   let map_scalar f = map_const (Constant.map_scalar f)
 
+  type solver_state =
+        { solver: Constant.PAC.solver_state (* Collision solver *)
+        ; solution: Cst.v Solution.t} (* Current variable assignation to constants *)
 
+  let pp_solver_state st = Constant.PAC.pp_solver st.solver
+
+  let add_equality c1 c2 st =
+    match Constant.collision c1 c2 with
+    | Some (p1, p2) -> begin
+      match PAC.add_equality p1 p2 st.solver with
+      | Some solver -> Some {st with solver}
+      | None -> None
+    end
+    | None -> if Cst.eq c1 c2 then Some st else None
+
+  let add_inequality c1 c2 st =
+    match Constant.collision c1 c2 with
+    | Some (p1, p2) -> begin
+      match PAC.add_inequality p1 p2 st.solver with
+      | Some solver -> Some {st with solver}
+      | None -> None
+    end
+    | None -> if Cst.eq c1 c2 then None else Some st
+
+  let normalize cst st = Constant.normalize cst st.solver
 end

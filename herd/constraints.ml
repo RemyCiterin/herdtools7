@@ -26,7 +26,6 @@ end
 module type S = sig
 
   module A : Arch_herd.S
-  module VC : CollisionSolver.S with type cst = A.V.Cst.v
 
   type final_state = A.rstate * A.FaultSet.t
 
@@ -44,9 +43,9 @@ module type S = sig
   module Mixed : functor (SZ: ByteSize.S) -> sig
 (* Check state *)
     val check_prop :
-      VC.solver_state -> prop -> A.type_env -> A.size_env
-      -> A.state * A.FaultSet.t -> bool list
-    val check_prop_rlocs : VC.solver_state -> prop -> A.type_env -> final_state -> bool
+      A.V.solver_state -> prop -> A.type_env -> A.size_env
+      -> A.state * A.FaultSet.t -> (bool * A.V.solver_state) list
+    val check_prop_rlocs : A.V.solver_state -> prop -> A.type_env -> final_state -> bool
   end
 
 (* Build a new constraint thar checks State membership *)
@@ -67,15 +66,14 @@ end
 open ConstrGen
 
 
-module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst = A.V.Cst.v) :
-    S with module A = A and module VC = VC
+module Make (C:Config) (A : Arch_herd.S) :
+    S with module A = A
         =
       struct
 
         let dbg = false
 
         module A = A
-        module VC = VC
         type final_state = A.rstate * A.FaultSet.t
 
 (************ Constraints ********************)
@@ -322,7 +320,7 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
         module Mixed (SZ : ByteSize.S) = struct
           module AM = A.Mixed(SZ)
 
-          type 'a monad = VC.solver_state -> ('a * VC.solver_state) list
+          type 'a monad = A.V.solver_state -> ('a * A.V.solver_state) list
           let (let*) x f = fun st ->
             List.concat (List.map (fun (a,s) -> f a s) (x st))
           let (let+) x f = fun st -> List.map (fun (a,s) -> (f a,s)) (x st)
@@ -339,7 +337,7 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
           let add_equality x y : unit monad = fun st ->
             match x, y with
             | V.Val c1, V.Val c2 -> begin
-              match VC.add_equality c1 c2 st with
+              match A.V.add_equality c1 c2 st with
               | None -> contradiction st
               | Some st -> pure () st
             end
@@ -351,7 +349,7 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
           let add_inequality x y : unit monad = fun st ->
             match x, y with
             | V.Val c1, V.Val c2 -> begin
-              match VC.add_inequality c1 c2 st with
+              match A.V.add_inequality c1 c2 st with
               | None -> contradiction st
               | Some st -> pure () st
             end
@@ -359,6 +357,15 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
                 if V.equal x y
                 then contradiction st
                 else pure () st
+
+          let normalize_fatom : A.fatom -> A.fatom monad = fun fatom st ->
+            [A.map_fatom (V.map_const (fun cst -> A.V.normalize cst st)) fatom,st]
+
+          let normalize_flts : A.FaultSet.t -> A.FaultSet.t monad = fun flts st ->
+            let flts =
+              A.FaultSet.map (A.map_fault (V.map_const (fun cst ->
+                A.V.normalize cst st))) flts
+            in [flts,st]
 
           let add_predicate is_eq x y =
             if is_eq then add_equality x y else add_inequality x y
@@ -379,6 +386,8 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
                   and w = look_val (Loc l2) in
                   add_predicate sign v w
               | Atom (FF f) ->
+                  let* f = normalize_fatom f in
+                  let* flts = normalize_flts flts in
                   let c = A.check_fatom flts f in
                   test_cond (if sign then c else not c)
               | Not p ->
@@ -396,16 +405,16 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
             fun p ->
               try
                 match do_rec true p solver, do_rec false p solver with
-                | _::_, _::_ -> [true;false]
+                | (_,st1)::_, (_, st2)::_ -> [(true,st1);(false,st2)]
+                | [], (_,st2)::_ -> [false,st2]
+                | (_,st1)::_, [] -> [true,st1]
                 | [], [] -> assert false
-                | [], _::_ -> [false]
-                | _::_, [] -> [true]
               with A.LocUndetermined -> assert false
 
           let check_prop solver p tenv senv (state,flts) =
             Printf.printf "constraints: \n\t%s\nsolver:\n%s\n"
               (ConstrGen.pp_prop (arg Ascii) p)
-              (VC.pp_solver_state solver);
+              (A.V.pp_solver_state solver);
             let look_val rloc =
               A.val_of_rloc
                 (AM.look_in_state senv state)
@@ -415,11 +424,11 @@ module Make (C:Config) (A : Arch_herd.S) (VC : CollisionSolver.S with type cst =
           let check_prop_rlocs solver p tenv (state,flts) =
             (*Printf.printf "constraints rloc: \n\t%s\nsolver:\n%s\n"
               (ConstrGen.pp_prop (arg Ascii) p)
-              (VC.pp_solver_state solver);*)
+              (A.V.pp_solver_state solver);*)
             let look_val rloc =
               AM.look_in_state_rlocs state rloc in
             match do_check_prop solver (A.look_rloc_type tenv) look_val flts p with
-            | [result] -> result
+            | [result,_] -> result
             | _ -> Warn.user_error "check_prop_rlocs return multiple solutions"
         end
 

@@ -1402,7 +1402,7 @@ let match_reg_events es =
         (* TODO: List.hd is probably an unsound approximation *)
         not C.check_filter || (
           match CM.check_prop solver p (S.type_env test) (S.size_env test) fsc with
-          | [result] -> result
+          | [result,_] -> result
           | _ -> Warn.user_error "check_prop return multiple results in check_filter"
         )
 
@@ -1426,7 +1426,7 @@ let match_reg_events es =
       let senv = S.size_env test
       and tenv = S.type_env test in
       let check_prop p = match CM.check_prop solver p tenv senv fsc with
-        | [result] -> result
+        | [result,_] -> result
         | _ -> Warn.user_error "check prop return multiple results in final_is_relevant"
       in
       match cnstr with

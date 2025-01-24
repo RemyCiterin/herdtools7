@@ -128,6 +128,15 @@ module type S =
       val map_const : (Cst.v -> Cst.v) -> v -> v
       val map_scalar : (Cst.Scalar.t -> Cst.Scalar.t) -> v -> v
       val map_csym : (csym -> v) -> v -> v
+
+(* Functions to interact with a constraint solver *)
+      type solver_state =
+            { solver: Constant.PAC.solver_state (* Collision solver *)
+            ; solution: Cst.v Solution.t} (* Current variable assignation to constants *)
+      val add_equality : Cst.v -> Cst.v -> solver_state -> solver_state option
+      val add_inequality : Cst.v -> Cst.v -> solver_state -> solver_state option
+      val normalize : Cst.v -> solver_state -> Cst.v
+      val pp_solver_state : solver_state -> string
     end
 
 module type AArch64 =

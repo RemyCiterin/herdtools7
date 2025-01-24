@@ -1,4 +1,4 @@
-NAME = example8
+NAME = normalisation_cex
 
 all: #my_herd
 	touch build/example.svg
@@ -8,9 +8,9 @@ my_herd:
 	../_build/install/default/bin/herd7 \
 		-gv $(NAME).litmus -o build \
 		-set-libdir ../herd/libdir \
-		-show prop -showevents all \
+		-show all -showevents all \
 		-doshow iico_ctrl -doshow ctrl -doshow all \
-		-squished true -variant pac -debug solver
+		-squished false -variant pac
 
 # Run my modified version of herd on a user given file
 %.expected:

@@ -123,9 +123,9 @@ module PAC = struct
   let pp_solver solver =
     let pp_elem x =
       if Misc.int_eq x.offset 0 then
-        Printf.sprintf "pac%s(%s)" x.key x.modifier
+        Printf.sprintf "PacField(%s,%s,%s)" x.name x.key x.modifier
       else
-        Printf.sprintf "pac%s(%s,%d)" x.key x.modifier x.offset
+        Printf.sprintf "PacField(%s,%s,%s,%d)" x.name x.key x.modifier x.offset
     in
     let rec aux = function
       | x :: y :: ys ->
@@ -161,6 +161,8 @@ module PAC = struct
             (PacMap.find var equations) (* only-contain non-basic variables *)
         else acc
       ) x x
+
+  let normalize (x: t) {equalities} = simplify x equalities
 
   (* Add the equality in a solver state and return the new solver state *)
   let add_equality (x: t) (y: t) (state: solver_state) : solver_state option =
@@ -276,6 +278,9 @@ let symbolic_data_collision s1 s2 =
     && not (PAC.equal s1.pac s2.pac)
   then Some (s1.pac, s2.pac)
   else None
+
+let symbolic_data_normalize s solver =
+  {s with pac = PAC.normalize s.pac solver}
 
 type syskind = PTE|PTE2|TLB
 type tagkind = PHY|VIR
@@ -483,6 +488,12 @@ let collision s1 s2 = match s1,s2 with
       symbolic_data_collision v1 v2
   | _, _ ->
       None
+
+let normalize s solver =
+  match s with
+  | Symbolic (Virtual v) ->
+      Symbolic (Virtual (symbolic_data_normalize v solver))
+  | _ -> s
 
 let rec mk_pp pp_symbol pp_scalar pp_label pp_pteval pp_instr = function
   | Concrete i -> pp_scalar i
