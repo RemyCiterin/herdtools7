@@ -1,4 +1,4 @@
-NAME = normalisation_cex
+NAME = example
 
 all: #my_herd
 	touch build/example.svg

@@ -91,7 +91,7 @@ module Make(O:Config)(M:XXXMem.S) =
       fun sts ->
         A.StateSet.fold
           (fun st n ->
-            if CM.check_prop_rlocs VC.init_solver p (S.type_env test) st then n+1 else n)
+            if CM.check_prop_rlocs p (S.type_env test) st then n+1 else n)
           sts 0
 
 (* Test result *)
@@ -319,7 +319,7 @@ module Make(O:Config)(M:XXXMem.S) =
                   ~sets:(Lazy.force set_pp) (Lazy.force vbpp)
             | _ -> ()
             end ;
-            let fsc = do_restrict test fsc in
+            let fsc = do_restrict test (st,flts,solver) in
             let r =
               { cands = c.cands+1;
                 cfail = c.cfail;
@@ -403,9 +403,10 @@ module Make(O:Config)(M:XXXMem.S) =
         let dlocs = S.displayed_rlocations test
         and senv = S.size_env test
         and tenv = S.type_env test in
-        let fsc,flts = fsc in
+        let fsc,flts,solver = fsc in
         AM.state_restrict_locs O.outcomereads dlocs tenv senv fsc,
-        restrict_faults flts in
+        restrict_faults flts,
+        solver in
 
 (* Open *)
       let ochan = open_dot test in
@@ -469,7 +470,7 @@ module Make(O:Config)(M:XXXMem.S) =
 (* Reduce final states, so as to show relevant locations only *)
       let finals =
         if O.outcomereads then
-          let do_restrict (st,flts) =
+          let do_restrict (st,flts,solver) =
             let st =
               A.rstate_filter
                 (fun rloc ->
@@ -478,7 +479,7 @@ module Make(O:Config)(M:XXXMem.S) =
                   | A.Location_global _ -> true
                   | A.Location_reg _ -> A.LocSet.mem loc c.reads)
                 st in
-                st,flts in
+                st,flts,solver in
           A.StateSet.map do_restrict c.states
         else c.states in
       let nfinals = A.StateSet.cardinal finals in

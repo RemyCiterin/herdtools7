@@ -27,7 +27,7 @@ module type S = sig
 
   module A : Arch_herd.S
 
-  type final_state = A.rstate * A.FaultSet.t
+  type final_state = A.rstate * A.FaultSet.t * A.V.solver_state
 
   type prop = (A.location,A.V.v,A.I.FaultType.t) ConstrGen.prop
 
@@ -45,7 +45,7 @@ module type S = sig
     val check_prop :
       A.V.solver_state -> prop -> A.type_env -> A.size_env
       -> A.state * A.FaultSet.t -> (bool * A.V.solver_state) list
-    val check_prop_rlocs : A.V.solver_state -> prop -> A.type_env -> final_state -> bool
+    val check_prop_rlocs : prop -> A.type_env -> final_state -> bool
   end
 
 (* Build a new constraint thar checks State membership *)
@@ -74,7 +74,7 @@ module Make (C:Config) (A : Arch_herd.S) :
         let dbg = false
 
         module A = A
-        type final_state = A.rstate * A.FaultSet.t
+        type final_state = A.rstate * A.FaultSet.t * A.V.solver_state
 
 (************ Constraints ********************)
 
@@ -117,7 +117,7 @@ module Make (C:Config) (A : Arch_herd.S) :
 
         let matrix_of_states fs =
           A.StateSet.fold
-            (fun (f,_) k -> A.rstate_to_list f::k)
+            (fun (f,_,_) k -> A.rstate_to_list f::k)
             fs []
 
         let best_col m =
@@ -370,6 +370,11 @@ module Make (C:Config) (A : Arch_herd.S) :
           let add_predicate is_eq x y =
             if is_eq then add_equality x y else add_inequality x y
 
+          module SolverSet = MySet.Make(struct
+            type t = A.V.solver_state
+            let compare = A.V.compare_solver_state
+          end)
+
           let do_check_prop solver look_type look_val flts =
             (* Return the list of solver states that satisfy (if sign then p
              * else Not p). This implementation is ineficient because it
@@ -404,24 +409,23 @@ module Make (C:Config) (A : Arch_herd.S) :
                   do_rec sign (Or [Not p1; p2]) in
             fun p ->
               try
-                match do_rec true p solver, do_rec false p solver with
-                | (_,st1)::_, (_, st2)::_ -> [(true,st1);(false,st2)]
-                | [], (_,st2)::_ -> [false,st2]
-                | (_,st1)::_, [] -> [true,st1]
-                | [], [] -> assert false
+                let solver_set sign =
+                  SolverSet.of_list (List.map snd (do_rec sign p solver)) in
+                List.map (fun s -> true,s) (SolverSet.to_list (solver_set true)) @
+                List.map (fun s -> false,s) (SolverSet.to_list (solver_set false))
               with A.LocUndetermined -> assert false
 
           let check_prop solver p tenv senv (state,flts) =
-            Printf.printf "constraints: \n\t%s\nsolver:\n%s\n"
+            (*Printf.printf "constraints: \n\t%s\nsolver:\n%s\n"
               (ConstrGen.pp_prop (arg Ascii) p)
-              (A.V.pp_solver_state solver);
+              (A.V.pp_solver_state solver);*)
             let look_val rloc =
               A.val_of_rloc
                 (AM.look_in_state senv state)
                 tenv rloc in
             do_check_prop solver (A.look_rloc_type tenv) look_val flts p
 
-          let check_prop_rlocs solver p tenv (state,flts) =
+          let check_prop_rlocs p tenv (state,flts,solver) =
             (*Printf.printf "constraints rloc: \n\t%s\nsolver:\n%s\n"
               (ConstrGen.pp_prop (arg Ascii) p)
               (A.V.pp_solver_state solver);*)

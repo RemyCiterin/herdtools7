@@ -1111,4 +1111,9 @@ module
     | None -> if Cst.eq c1 c2 then None else Some st
 
   let normalize cst st = Constant.normalize cst st.solver
+
+  let compare_solver_state s1 s2 =
+    match Constant.PAC.compare_solver_state s1.solver s2.solver with
+    | 0 -> 0 (* Solution.compare Cst.compare s1.solution s2.solution *)
+    | r -> r
 end

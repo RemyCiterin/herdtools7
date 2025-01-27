@@ -137,6 +137,7 @@ module type S =
       val add_inequality : Cst.v -> Cst.v -> solver_state -> solver_state option
       val normalize : Cst.v -> solver_state -> Cst.v
       val pp_solver_state : solver_state -> string
+      val compare_solver_state : solver_state -> solver_state -> int
     end
 
 module type AArch64 =

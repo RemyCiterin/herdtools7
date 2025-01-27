@@ -47,7 +47,9 @@ module PAC = struct
     }
 
   let pp_signature p s =
-    sprintf "pac%s(%s, %s, %d)" p.key s p.modifier p.offset
+    if Misc.int_eq p.offset 0
+    then sprintf "pac%s(%s, %s)" p.key s p.modifier
+    else sprintf "pac%s(%s, %s, %d)" p.key s p.modifier p.offset
 
   let compare_signature p1 p2 =
     match String.compare p1.key p2.key with
@@ -66,6 +68,8 @@ module PAC = struct
     type t = signature
     let compare = compare_signature
   end)
+
+  module PacSetSet = Set.Make (PacSet)
 
   module PacMap = Map.Make (struct
     type t = signature
@@ -117,36 +121,33 @@ module PAC = struct
       (* a set of inequalities of the form n_1 ^ ... ^ n_k != 0, k must be
          at least 1, such that each inequality is not empty (otherwise we found
          a contradiction), {n_1, ..., n_k} must be a set of non-basic variables *)
-      inequalities: PacSet.t list;
+      inequalities: PacSetSet.t;
     }
 
+  let compare_solver_state s1 s2 =
+    match PacMap.compare PacSet.compare s1.equalities s2.equalities with
+    | 0 -> PacSetSet.compare s1.inequalities s2.inequalities
+    | r -> r
+
   let pp_solver solver =
-    let pp_elem x =
-      if Misc.int_eq x.offset 0 then
-        Printf.sprintf "PacField(%s,%s,%s)" x.name x.key x.modifier
-      else
-        Printf.sprintf "PacField(%s,%s,%s,%d)" x.name x.key x.modifier x.offset
+    let rec aux name = function
+      | x :: xs ->
+          pp_signature x (aux name xs)
+      | [] -> name
     in
-    let rec aux = function
-      | x :: y :: ys ->
-          Printf.sprintf "%s ^ %s" (pp_elem x) (aux (y :: ys))
-      | [x] ->
-          pp_elem x
-      | [] -> "0"
-    in
-    let pp_xor set = aux (PacSet.to_list set) in
+    let pp_xor name set = aux name (PacSet.to_list set) in
     let equalities =
-      PacMap.fold (fun x def s -> Printf.sprintf "\t%s := %s\n%s" (pp_elem x) (pp_xor def) s)
+      PacMap.fold (fun x def s ->
+        Printf.sprintf " %s=%s;%s" (pp_signature x x.name) (pp_xor x.name def) s)
       solver.equalities ""
     in
-    let inequalities =
-      List.fold_right (fun eq s -> Printf.sprintf "\t0 != %s\n%s" (pp_xor eq) s)
-      solver.inequalities equalities
-    in
-    inequalities
+    PacSetSet.fold (fun x s ->
+      let first = PacSet.min_elt x in
+      Printf.sprintf " %s<>%s;%s" first.name (pp_xor first.name x) s)
+    solver.inequalities equalities
 
 
-  let empty_solver = {equalities= PacMap.empty; inequalities= []}
+  let empty_solver = {equalities= PacMap.empty; inequalities= PacSetSet.empty}
 
   (* simplify all the basic variables by their definition *)
   (* so the output only contain non-basic variables *)
@@ -180,7 +181,7 @@ module PAC = struct
       in
 
       (* simplify all the current inequations with the new one *)
-      let simplified_inequalities = List.map
+      let simplified_inequalities = PacSetSet.map
         (fun x -> simplify x (PacMap.singleton pivot def))
         state.inequalities
       in
@@ -191,7 +192,7 @@ module PAC = struct
         inequalities = simplified_inequalities
       } in
 
-      if List.exists PacSet.is_empty new_state.inequalities
+      if PacSetSet.exists PacSet.is_empty new_state.inequalities
       then None (* We found a contradiction *)
       else Some new_state (* No contradiction found *)
     end
@@ -204,9 +205,9 @@ module PAC = struct
     then None
     else
       (* If we have more than 2^n - 1 inequalities the pivot algorithm is not sound *)
-      if List.length state.inequalities > 32767
+      if PacSetSet.cardinal state.inequalities > 32767
       then Warn.user_error "PAC fields solver: too many inequalities to be sound"
-      else Some {state with inequalities = inequality :: state.inequalities}
+      else Some {state with inequalities = PacSetSet.add inequality state.inequalities}
 end
 
 

@@ -44,6 +44,8 @@ module PAC : sig
    * virtual addresses*)
   type solver_state
 
+  val compare_solver_state : solver_state -> solver_state -> int
+
   val pp_solver : solver_state -> string
 
   (* A solver state without constraints *)
