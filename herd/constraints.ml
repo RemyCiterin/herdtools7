@@ -416,9 +416,6 @@ module Make (C:Config) (A : Arch_herd.S) :
               with A.LocUndetermined -> assert false
 
           let check_prop solver p tenv senv (state,flts) =
-            (*Printf.printf "constraints: \n\t%s\nsolver:\n%s\n"
-              (ConstrGen.pp_prop (arg Ascii) p)
-              (A.V.pp_solver_state solver);*)
             let look_val rloc =
               A.val_of_rloc
                 (AM.look_in_state senv state)
@@ -426,9 +423,6 @@ module Make (C:Config) (A : Arch_herd.S) :
             do_check_prop solver (A.look_rloc_type tenv) look_val flts p
 
           let check_prop_rlocs p tenv (state,flts,solver) =
-            (*Printf.printf "constraints rloc: \n\t%s\nsolver:\n%s\n"
-              (ConstrGen.pp_prop (arg Ascii) p)
-              (A.V.pp_solver_state solver);*)
             let look_val rloc =
               AM.look_in_state_rlocs state rloc in
             match do_check_prop solver (A.look_rloc_type tenv) look_val flts p with
