@@ -58,7 +58,7 @@ to simplify this equation and have as a final state:
 In this case, it's clear that the first test pass, because we directly have a
 canonical value in `x0`.
 
-### A patological example
+### A pathological example
 
 But normalisation is not always enough to solve the problem of making visible
 the reason of the success or failure of a test. As example if the variable is
