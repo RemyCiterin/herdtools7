@@ -1,13 +1,13 @@
 # Pretty printing of hash collisions
 
-As I explained in my previous ![notes](notes3.md), it is possible to have hash
+As I explained in my previous [notes](notes3.md), it is possible to have hash
 collision in the computation of Pointer Authentication Codes of virtual
 addresses, these collisions can be represented as equalities or
 inequalities of pac-fields, or XOR of pac-fields if we don't use `FEAT_FPAC` or
 if we use `FEAT_CONSTPACFIELD`.
 
 
-As I explained in a previous ![note](solver.md), we can solve such systems of
+As I explained in a previous [note](solver.md), we can solve such systems of
 equalities and inequalities using a constraints solver based on a symplex-like
 algorithm using Gauss pivots to maintain a set of basic variables, a set of
 definition of basic variables as XOR of non-basic variables, and a set of
