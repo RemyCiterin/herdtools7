@@ -1,4 +1,4 @@
-NAME = example
+NAME = normalisation_cex
 
 all: #my_herd
 	touch build/example.svg
@@ -19,9 +19,9 @@ my_herd:
 		-set-libdir ../herd/libdir \
 		-showevents all -show all \
 		-doshow iico_ctrl -doshow ctrl -doshow all \
-		-squished true -fontsize 20 > $(@:.expected=.litmus.expected)
-	touch build/example.svg
-	dot -Tsvg build/$(@:.expected=).dot > build/example.svg
+		-squished true -fontsize 20 #> $(@:.expected=.litmus.expected)
+	#touch build/example.svg
+	#dot -Tsvg build/$(@:.expected=).dot > build/example.svg
 
 herd:
 	herd7 \

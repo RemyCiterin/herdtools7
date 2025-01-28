@@ -142,10 +142,10 @@ module PAC = struct
       solver.equalities ""
     in
     PacSetSet.fold (fun x s ->
-      let first = PacSet.min_elt x in
-      Printf.sprintf " %s<>%s;%s" first.name (pp_xor first.name x) s)
+      let y = PacSet.min_elt x in
+      let x = PacSet.remove y x in
+      Printf.sprintf " %s<>%s;%s" (pp_signature y y.name) (pp_xor y.name x) s)
     solver.inequalities equalities
-
 
   let empty_solver = {equalities= PacMap.empty; inequalities= PacSetSet.empty}
 

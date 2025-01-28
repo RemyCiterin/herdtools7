@@ -376,9 +376,13 @@ module Make (C:Config) (A : Arch_herd.S) :
           end)
 
           let do_check_prop solver look_type look_val flts =
-            (* Return the list of solver states that satisfy (if sign then p
-             * else Not p). This implementation is ineficient because it
-             * duplicate all the computations at each Or or NAnd gates *)
+            (* Return the list of solver states that satisfy `(if sign then p
+             * else Not p)`. This implementation is ineficient because it
+             * duplicate all the computations at each Or or NAnd gates.
+             * To optimize this it's probably possible to use a map from
+             * `solver_state` to `'a` instead of a list of `'a * solver_state`
+             * but this add the cost of comparing solver states in the map
+             * operations *)
             let rec do_rec sign p : unit monad = match p with
               | Atom (LV (rloc,v0)) ->
                   let t = look_type rloc in
