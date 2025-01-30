@@ -101,8 +101,8 @@ So it's clear that only the first result is a success. Now the question is what
 set of solver states we want in function of the test that we are looking for.
 
 - The list of all the possible models of the formula
-- Some kind of disjunctive normal form to only see the minimal set of equalities
-    or inequalities to force the condition to be true or false
+- The set of minimal models to not hase useless redondencies in the final
+    states
 - An approximation using the syntax of the formula
 
 ### A first example to see the two first options
@@ -129,7 +129,7 @@ All possible equalities and inequalities must be assigned even if the
 satisfaction of the output formula doesn't depend of those predicates.
 
 
-Here is the "disjunctive normal form" of the output condition:
+Here is the set of minimal models of the output condition:
 
 ```
 0:X0=x; pacda(x, 0x0)=x;
@@ -170,7 +170,8 @@ let do_rec sign : unit monad = function
 
 so the search is split at each disjunction, even if the solver state returned by
 one branch is a subset of the solver state returned by another branch. At the
-end I do some manipulations to remove all the duplications.
+end I do some manipulations to remove all the duplications (when two solver
+states are equals).
 
 
 To see the difference here is a modified version of the first example:
@@ -185,7 +186,7 @@ P0;
 exists ( (0:x0=x \/ 0:x0=pacdb(x,0)) \/ ~Fault(P0) )
 ```
 
-The DNF is the following:
+The set of minimal models is the following:
 
 ```
 0:X0=x;  ~Fault(P0); pacda(x, 0x0)=pacdb(x, 0x0);

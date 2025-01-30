@@ -1467,16 +1467,18 @@ let match_reg_events es =
               A.state_add k (tr_physical loc) (get_written ew)
           | _,_ -> k)
           rfm test.Test_herd.init_state in
-      st,
-      if A.FaultAtomSet.is_empty test.Test_herd.ffaults && not !Opts.dumpallfaults then
-        A.FaultSet.empty
-      else
-        E.EventSet.fold
-          (fun e k ->
-            match E.to_fault e with
-            | Some f -> A.FaultSet.add f k
-            | None -> k)
-          es A.FaultSet.empty
+      let flts =
+        if A.FaultAtomSet.is_empty test.Test_herd.ffaults && not !Opts.dumpallfaults
+        then
+          A.FaultSet.empty
+        else
+          E.EventSet.fold
+            (fun e k ->
+              match E.to_fault e with
+              | Some f -> A.FaultSet.add f k
+              | None -> k)
+            es A.FaultSet.empty in
+      st,flts
 
 
 (* View before relations easily available, from po_iico and rfmap *)

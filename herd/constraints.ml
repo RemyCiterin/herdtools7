@@ -375,6 +375,86 @@ module Make (C:Config) (A : Arch_herd.S) :
             let compare = A.V.compare_solver_state
           end)
 
+          module Var = struct
+            type t
+              = Eq of V.v * V.v
+              | Fault of (V.v,A.I.FaultType.t) Fault.atom
+
+            let pp = function
+              | Eq (x,y) -> Printf.sprintf "%s = %s" (V.pp_v x) (V.pp_v y)
+              | Fault f -> Fault.pp_fatom V.pp_v A.I.FaultType.pp f
+
+            let compare x y =
+              match x,y with
+              | Eq (a,b), Eq (c,d) -> begin
+                match V.compare a c with
+                | 0 -> V.compare b d
+                | r -> r
+              end
+              | Fault f1, Fault f2 ->
+                  Fault.atom_compare V.compare A.I.FaultType.compare f1 f2
+              | Eq _, Fault _ -> -1
+              | Fault _, Eq _ -> 1
+
+            let equal x y = Misc.int_eq (compare x y) 0
+
+            let check flts : t*bool -> unit monad = function
+              | Eq (x,y), sign -> add_predicate sign x y
+              | Fault f, sign ->
+                  let* f = normalize_fatom f in
+                  let* flts = normalize_flts flts in
+                  let c = A.check_fatom flts f in
+                  test_cond (if sign then c else not c)
+
+            let check_model flts : (t*bool) list -> unit monad = fun preds ->
+              iter (List.map (check flts) preds)
+          end
+
+          module Formula = Bdd.Make(Var)
+
+          let build_bdd look_type look_val : prop -> Formula.t =
+            let open Var in
+            let open Formula in
+            let rec do_rec = function
+              | Atom (LV (rloc,v0)) ->
+                  let t = look_type rloc in
+                  let w0 = look_val rloc in
+                  let v = A.mask_type t v0
+                  and w = A.mask_type t w0 in
+                  mk_atom (Eq (v,w))
+              | Atom (LL (l1,l2)) ->
+                  let v = look_val (Loc l1)
+                  and w = look_val (Loc l2) in
+                  mk_atom (Eq (v,w))
+              | Atom (FF f) ->
+                  mk_atom (Fault f)
+              | And ps ->
+                  List.fold_right
+                    (fun p acc -> mk_and (do_rec p) acc)
+                    ps (of_bool true)
+              | Or ps ->
+                  List.fold_right
+                    (fun p acc -> mk_or (do_rec p) acc)
+                    ps (of_bool false)
+              | Not p ->
+                  mk_not (do_rec p)
+              | Implies (p, q) ->
+                  do_rec (Or [Not p; q])
+            in fun p ->
+              try do_rec p
+              with A.LocUndetermined -> assert false
+
+          let check_bdd flts solver formula : (bool * V.solver_state) list =
+            let positives : (Var.t * bool) list list = Formula.all_sat formula in
+            let negatives : (Var.t * bool) list list = Formula.all_sat (Formula.mk_not formula) in
+            let positives : unit monad = alt (List.map (Var.check_model flts) positives) in
+            let negatives : unit monad = alt (List.map (Var.check_model flts) negatives) in
+            let solver_set m = SolverSet.of_list (List.map snd (m solver)) in
+            List.map (fun s -> true,s) (SolverSet.to_list (solver_set positives)) @
+            List.map (fun s -> false,s) (SolverSet.to_list (solver_set negatives))
+
+
+
           let do_check_prop solver look_type look_val flts =
             (* Return the list of solver states that satisfy `(if sign then p
              * else Not p)`. This implementation is ineficient because it
@@ -413,6 +493,7 @@ module Make (C:Config) (A : Arch_herd.S) :
                   do_rec sign (Or [Not p1; p2]) in
             fun p ->
               try
+                (* The solver states must be uniques in the outputs *)
                 let solver_set sign =
                   SolverSet.of_list (List.map snd (do_rec sign p solver)) in
                 List.map (fun s -> true,s) (SolverSet.to_list (solver_set true)) @
@@ -424,7 +505,10 @@ module Make (C:Config) (A : Arch_herd.S) :
               A.val_of_rloc
                 (AM.look_in_state senv state)
                 tenv rloc in
-            do_check_prop solver (A.look_rloc_type tenv) look_val flts p
+            let formula = build_bdd (A.look_rloc_type tenv) look_val p in
+            (*Format.printf "%s\n" (Formula.pp formula) ;*)
+            check_bdd flts solver formula
+            (*do_check_prop solver (A.look_rloc_type tenv) look_val flts p*)
 
           let check_prop_rlocs p tenv (state,flts,solver) =
             let look_val rloc =
