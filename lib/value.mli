@@ -95,7 +95,7 @@ module type S =
       (* The equality tests may raise an CollisionPAC execption to info the
          solver that the result depend of the presence of a hash collision
          between two PAC fields *)
-      exception CollisionPAC of Constant.PAC.t * Constant.PAC.t * v * v
+      exception CollisionPAC of PAC.t * PAC.t * v * v
 
 
 (* Bit-Twiddling Ops *)
@@ -131,7 +131,7 @@ module type S =
 
 (* Functions to interact with a constraint solver *)
       type solver_state =
-            { solver: Constant.PAC.solver_state (* Collision solver *)
+            { solver: PAC.solver_state (* Collision solver *)
             ; solution: Cst.v Solution.t} (* Current variable assignation to constants *)
       val add_equality : Cst.v -> Cst.v -> solver_state -> solver_state option
       val add_inequality : Cst.v -> Cst.v -> solver_state -> solver_state option

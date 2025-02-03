@@ -4303,19 +4303,9 @@ module Make
            let lbl_v = get_instr_label ii in
            m_fault >>| set_elr_el1 lbl_v ii >>! B.Fault [AArch64Base.elr_el1, lbl_v]
 (* Pointer Anthentication Code `FEAT_Pauth2` with `FEAT_FPAC` *)
-        | I_PAC_DA (rd, rn)
-        | I_PAC_DB (rd, rn)
-        | I_PAC_IA (rd, rn)
-        | I_PAC_IB (rd, rn)
+        | I_PAC (key, rd, rn)
         ->
             begin
-              let key = match inst with
-                | I_PAC_IA _ -> "ia"
-                | I_PAC_IB _ -> "ib"
-                | I_PAC_DA _ -> "da"
-                | I_PAC_DB _ -> "db"
-                | _ -> assert false
-              in
               (* Ensure that we doesn't raise an user error in case of a hash
                * collision between the PAC field of the virtual address in `rd`
                * and the canonical PAC field... *)
@@ -4332,24 +4322,14 @@ module Make
               B.nextSetT rd v
             end
         (* Implement `FEAT_FPAC`: raise a fault if the PAC field doesn't match *)
-        | I_AUT_DA (rd, rn)
-        | I_AUT_DB (rd, rn)
-        | I_AUT_IA (rd, rn)
-        | I_AUT_IB (rd, rn)
+        | I_AUT (key, rd, rn)
         ->
             begin
               let (>>!) = M.(>>!) in
-              let (key, k_fault) = match inst with
-                | I_AUT_IA _ -> ("ia", FaultType.AArch64.IA)
-                | I_AUT_IB _ -> ("ib", FaultType.AArch64.IB)
-                | I_AUT_DA _ -> ("da", FaultType.AArch64.DA)
-                | I_AUT_DB _ -> ("db", FaultType.AArch64.DB)
-                | _ -> assert false
-              in
 
               let mfault =
                   mk_fault None Dir.R Annot.N ii
-                    (Some (FaultType.AArch64.PacCheck k_fault))
+                    (Some (FaultType.AArch64.PacCheck key))
                     None
                   >>! B.Exit
               in
@@ -4367,7 +4347,7 @@ module Make
               in
 
               if fpac
-              then check_pac_canonical ("pac"^key) ma ii mop mfault
+              then check_pac_canonical ("pac"^PAC.pp_lower_key key) ma ii mop mfault
               else ma >>= mop
             end
         (* If address tagging and logical address tagging is not enabled then

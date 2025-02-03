@@ -139,7 +139,7 @@ module
    * contain the values of the pac fields that may generate the collision and
    * the value of the output depending of the presence of a collision
    *)
-  exception CollisionPAC of Constant.PAC.t * Constant.PAC.t * v * v
+  exception CollisionPAC of PAC.t * PAC.t * v * v
 
   let is_zero v = match v with
   | Val cst -> Cst.eq cst Cst.zero
@@ -696,11 +696,11 @@ module
   let addOnePAC key pointer modifier =
     match pointer, modifier with
     | Val (Symbolic (Virtual {pac})), Val _
-      when not (Constant.PAC.is_canonical pac) ->
+      when not (PAC.is_canonical pac) ->
         Warn.user_error "addPAC: %s already contain a PAC field" (pp_v pointer)
     | Val (Symbolic (Virtual ({pac; offset; name} as v))), Val m ->
       let modifier = Cst.pp true m in
-      let pac = Constant.PAC.add name key modifier offset pac in
+      let pac = PAC.add name key modifier offset pac in
       Val (Symbolic (Virtual {v with pac}))
     | Val _, Val _ ->
         Warn.user_error "addPAC: %s is not a valid virtual address" (pp_v pointer)
@@ -714,7 +714,7 @@ module
     match pointer, modifier with
     | Val (Symbolic (Virtual ({pac; offset; name} as v))), Val m ->
       let modifier = Cst.pp true m in
-      let pac = Constant.PAC.add name key modifier offset pac in
+      let pac = PAC.add name key modifier offset pac in
       Val (Symbolic (Virtual {v with pac}))
     | Val _, Val _ ->
         Warn.user_error "addPAC: %s is not a valid virtual address" (pp_v pointer)
@@ -724,11 +724,11 @@ module
   (* Check that the PAC field of a virtual address is canonical *)
   let checkCanonical = function
     | Val (Symbolic (Virtual {pac})) ->
-        if Constant.PAC.is_canonical pac then
+        if PAC.is_canonical pac then
           Val (Concrete Cst.Scalar.one)
         else
           raise
-            (CollisionPAC (pac,Constant.PAC.canonical,one,zero))
+            (CollisionPAC (pac,PAC.canonical,one,zero))
     | Val cst ->
         Warn.user_error "checkCanonical: %s is not a valid virtual address" (Cst.pp_v cst)
     | Var _ -> raise Undetermined
@@ -736,7 +736,7 @@ module
   (* Remove the PAC field of a virtual address *)
   let setCanonical = function
     | Val (Symbolic (Virtual v)) ->
-        Val (Symbolic (Virtual {v with pac= Constant.PAC.canonical}))
+        Val (Symbolic (Virtual {v with pac= PAC.canonical}))
     | Val cst ->
         Warn.user_error "setCanonical: %s is not a valid virtual address" (Cst.pp_v cst)
     | Var _ -> raise Undetermined
@@ -1087,10 +1087,10 @@ module
   let map_scalar f = map_const (Constant.map_scalar f)
 
   type solver_state =
-        { solver: Constant.PAC.solver_state (* Collision solver *)
+        { solver: PAC.solver_state (* Collision solver *)
         ; solution: Cst.v Solution.t} (* Current variable assignation to constants *)
 
-  let pp_solver_state st = Constant.PAC.pp_solver st.solver
+  let pp_solver_state st = PAC.pp_solver st.solver
 
   let add_equality c1 c2 st =
     match Constant.collision c1 c2 with
@@ -1113,7 +1113,7 @@ module
   let normalize cst st = Constant.normalize cst st.solver
 
   let compare_solver_state s1 s2 =
-    match Constant.PAC.compare_solver_state s1.solver s2.solver with
+    match PAC.compare_solver_state s1.solver s2.solver with
     | 0 -> 0 (* Solution.compare Cst.compare s1.solution s2.solution *)
     | r -> r
 end

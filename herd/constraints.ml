@@ -380,9 +380,11 @@ module Make (C:Config) (A : Arch_herd.S) :
               = Eq of V.v * V.v
               | Fault of (V.v,A.I.FaultType.t) Fault.atom
 
-            let pp = function
-              | Eq (x,y) -> Printf.sprintf "%s = %s" (V.pp_v x) (V.pp_v y)
-              | Fault f -> Fault.pp_fatom V.pp_v A.I.FaultType.pp f
+            let pp x b = match x,b with
+              | Eq (x,y),true -> Printf.sprintf "%s = %s" (V.pp_v x) (V.pp_v y)
+              | Eq (x,y),false -> Printf.sprintf "%s <> %s" (V.pp_v x) (V.pp_v y)
+              | Fault f,false -> "~" ^ Fault.pp_fatom V.pp_v A.I.FaultType.pp f
+              | Fault f,true -> Fault.pp_fatom V.pp_v A.I.FaultType.pp f
 
             let compare x y =
               match x,y with
@@ -412,7 +414,16 @@ module Make (C:Config) (A : Arch_herd.S) :
 
           module Formula = Bdd.Make(Var)
 
-          let build_bdd look_type look_val : prop -> Formula.t =
+          let mk_eq solver (x: V.v) (y: V.v) : Formula.t =
+            let x = V.map_const (fun c -> V.normalize c solver) x in
+            let y = V.map_const (fun c -> V.normalize c solver) y in
+            match x,y with
+            | V.Val a, V.Val b when Option.is_some (Constant.collision a b) ->
+                Formula.mk_atom (Eq (x,y))
+            | _, _ ->
+                Formula.of_bool (V.equal x y)
+
+          let build_bdd solver look_type look_val : prop -> Formula.t =
             let open Var in
             let open Formula in
             let rec do_rec = function
@@ -421,11 +432,11 @@ module Make (C:Config) (A : Arch_herd.S) :
                   let w0 = look_val rloc in
                   let v = A.mask_type t v0
                   and w = A.mask_type t w0 in
-                  mk_atom (Eq (v,w))
+                  mk_eq solver v w
               | Atom (LL (l1,l2)) ->
                   let v = look_val (Loc l1)
                   and w = look_val (Loc l2) in
-                  mk_atom (Eq (v,w))
+                  mk_eq solver v w
               | Atom (FF f) ->
                   mk_atom (Fault f)
               | And ps ->
@@ -452,8 +463,6 @@ module Make (C:Config) (A : Arch_herd.S) :
             let solver_set m = SolverSet.of_list (List.map snd (m solver)) in
             List.map (fun s -> true,s) (SolverSet.to_list (solver_set positives)) @
             List.map (fun s -> false,s) (SolverSet.to_list (solver_set negatives))
-
-
 
           let do_check_prop solver look_type look_val flts =
             (* Return the list of solver states that satisfy `(if sign then p
@@ -505,7 +514,7 @@ module Make (C:Config) (A : Arch_herd.S) :
               A.val_of_rloc
                 (AM.look_in_state senv state)
                 tenv rloc in
-            let formula = build_bdd (A.look_rloc_type tenv) look_val p in
+            let formula = build_bdd solver (A.look_rloc_type tenv) look_val p in
             (*Format.printf "%s\n" (Formula.pp formula) ;*)
             check_bdd flts solver formula
             (*do_check_prop solver (A.look_rloc_type tenv) look_val flts p*)

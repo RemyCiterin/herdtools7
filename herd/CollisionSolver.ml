@@ -106,7 +106,6 @@ and type state = A.state =
 
     open Printf
     module V = A.V
-    module PAC = Constant.PAC
 
     type atom = V.v
     type cst = V.Cst.v
