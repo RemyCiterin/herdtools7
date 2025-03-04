@@ -270,12 +270,14 @@ end = struct
                 let allocated = allocate parsed in
                 let compiled = compile doc allocated in
                 let source = MyName.outname name ".c" in
+                let pac = O.variant Variant_litmus.Pac in
                 dump source doc compiled;
                 if not OT.is_out then begin
                     let _utils =
                       let module OO = struct
                         include OT
                         let arch = A'.arch
+                        let variant = O.variant
                         let sysarch = Archs.get_sysarch A'.arch OT.carch
                         let cached =
                           match threadstyle with
@@ -283,11 +285,11 @@ end = struct
                           | _ -> false
                       end in
                       let module Obj = ObjUtil.Make(OO)(Tar) in
-                      Obj.dump () in
+                      Obj.dump pac in
                     ()
                   end ;
                 R.run name out_chan doc allocated source ;
-                Completed (A'.arch,doc,source,cycles,hash_env,nprocs)
+                Completed (A'.arch,doc,source,cycles,hash_env,nprocs,pac)
               end else begin
                 let cause = if limit_ok then "" else " (too many threads)" in
                 W.warn "%s test not compiled%s"
