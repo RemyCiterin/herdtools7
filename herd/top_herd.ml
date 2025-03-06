@@ -14,7 +14,6 @@
 (* "http://www.cecill.info". We also give a copy in LICENSE.txt.            *)
 (****************************************************************************)
 
-(*module Collision = CollisionSolver*)
 module Collision = CollisionSolver
 
 (** Top level loop : execute test according to model *)
